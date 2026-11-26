@@ -57,6 +57,7 @@ sub init()
     m.lastPosSeen = 0
     m.noTrkMenu = false
     m.provItem = invalid
+    m.audioBad = false        ' this device said it can't play the current stream's audio
 end sub
 
 sub onReq()
@@ -173,6 +174,7 @@ sub playLive(fmt as string)
     ext = "m3u8"
     if fmt = "ts" then ext = "ts"
     m.fmt = fmt
+    m.audioBad = false
     m.audioDone = false
     m.userPicked = false
     m.tracks = []
@@ -421,7 +423,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = "options" then
         if m.aPanel.visible then
             closeAudio()
-        else if m.live and m.tracks.Count() < 2 then
+        else if m.live and m.tracks.Count() < 2 and not m.audioBad then
             showBanner(m.idx, "")
         else
             openAudio()
@@ -464,8 +466,9 @@ end sub
 
 ' ---------------------------------------------------------------- audio tracks
 ' Device-agnostic: never trust a fixed list of codec names. Roku TVs decode AAC/MP3/AC3/EAC3; HDMI players
-' (e.g. Premiere 3920X) decode AAC/MP3 and decode or pass through AC3/EAC3. Only DTS/TrueHD that this device
-' reports it can't handle (CanDecodeAudio false) count as "can't play". Unknown/empty codec = playable.
+' (e.g. Premiere 3920X) decode AAC/MP3 only and can merely pass AC3/EAC3/DTS on to a TV or soundbar that
+' accepts them. Whatever this device reports it can't handle (CanDecodeAudio false) counts as "can't play":
+' another track is picked, then the provider's HLS version, then the PC. Unknown/empty codec = playable.
 
 ' raw Format/Name text from availableAudioTracks or Video.audioFormat -> aac|mp3|ac3|eac3|dts|truehd|... or ""
 function normCodec(raw as dynamic) as string
@@ -512,10 +515,14 @@ function decodeState(codec as string) as string
     end try
     if dev = "true" then
         st = "yes"
-    else if c = "aac" or c = "mp3" or c = "ac3" or c = "eac3" then
-        st = "yes"           ' every Roku plays these, or sends them on over HDMI
-    else if dev = "false" and (c = "dts" or c = "truehd") then
+    else if c = "aac" or c = "mp3" then
+        st = "yes"           ' every Roku decodes these itself
+    else if dev = "false" and (c = "ac3" or c = "eac3" or c = "dts" or c = "truehd") then
+        ' v1.0.12: Roku TVs decode Dolby (AC3/EAC3) themselves, but HDMI players such as the Premiere 3920X
+        ' only pass it through. If the TV / audio setting doesn't accept Dolby, the result is a silent picture.
         st = "no"
+    else if c = "ac3" or c = "eac3" then
+        st = "yes"           ' device didn't answer: assume it plays or passes through
     else
         st = "unknown"       ' not sure: play it and let the log tell
     end if
@@ -606,6 +613,7 @@ sub checkAudio(tracks as dynamic)
         m.video.audioTrack = toS(best.Track)
     end if
     ' "can't play" only when the device said no for every track, or for the playing format, and it's a known DTS/TrueHD
+    m.audioBad = false
     fc = normCodec(fmtRaw)
     bad = allNo
     if m.tracks.Count() = 0 and fc <> "" and decodeState(fc) = "no" then bad = true
@@ -622,9 +630,17 @@ sub checkAudio(tracks as dynamic)
     end if
     hint = "This device can't play this audio"
     if what <> "" then hint = hint + " (" + what + ")"
+    if fcIsDolby(what) then hint = "This Roku can't decode Dolby audio (" + what + ") and the TV isn't accepting it"
+    m.audioBad = true
+    if m.live then
+        ' live: don't cover the picture on every channel change, just say it (the * button opens the tips)
+        showHint(hint + ". Press * for options.")
+        return
+    end if
     showHint(hint + ".")
     openAudio()
     m.aHead.text = "NO SOUND?  " + what
+    if fcIsDolby(what) then m.aTip.visible = true      ' the fix is usually the Roku audio setting: show it right away
 end sub
 
 ' ---- provider's own HLS version of a movie/episode (Xtream servers often remux it, sometimes with AAC audio)
@@ -659,6 +675,11 @@ sub provHls()
     m.provTimer.control = "stop"
     m.provTimer.control = "start"
 end sub
+
+function fcIsDolby(what as string) as boolean
+    w = LCase(what)
+    return (w = "ac3" or w = "eac3")
+end function
 
 function noAudioFormat() as boolean
     f = LCase(toS(m.video.audioFormat))

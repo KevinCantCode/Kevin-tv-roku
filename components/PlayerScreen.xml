@@ -31,8 +31,8 @@
       <Label id="aHead" text="AUDIO" translation="[48,90]" width="580" font="font:SmallestBoldSystemFont" color="0xA8A8BCFF"/>
       <LabelList id="aList" translation="[36,140]" itemSize="[588,64]" numRows="12" vertFocusAnimationStyle="floatingFocus"
           focusBitmapUri="pkg:/images/pill.9.png" color="0xD6D6E2FF" focusedColor="0x0B0B10FF" font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
-      <Label id="aTip" translation="[48,640]" width="570" height="320" wrap="true" maxLines="9" visible="false" font="font:SmallestSystemFont" color="0xD6D6E2FF"
-          text="With a soundbar on HDMI ARC: Roku Settings › Audio › Digital output format → Auto (or Passthrough), and turn on HDMI ARC/eARC, so Dolby and DTS go to the soundbar. On the TV speakers DTS and TrueHD can't play: pick another track, or Play through the PC. (Menu names vary by model.)"/>
+      <Label id="aTip" translation="[48,640]" width="570" height="360" wrap="true" maxLines="11" visible="false" font="font:SmallestSystemFont" color="0xD6D6E2FF"
+          text="Roku players (Premiere, Express, Stick) don't decode Dolby or DTS themselves: they hand it to the TV or soundbar. On the Roku: Settings › Audio › HDMI (or Digital output format) → Auto detect, and Audio mode → Auto. If the TV still stays silent it can't take Dolby: pick an AAC track above, or Play through the PC, which converts the sound. (Menu names vary by model.)"/>
       <Label text="OK: choose  ·  Back: close" translation="[48,980]" width="580" font="font:SmallestSystemFont" color="0x8A8AA0FF"/>
     </Group>
     <Label id="msg" translation="[160,880]" width="1600" horizAlign="center" wrap="true" font="font:MediumSystemFont" visible="false"/>
