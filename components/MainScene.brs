@@ -602,6 +602,7 @@ sub onPlayReq_impl(e as object)
     req.ext = toS(req.ext)
     if req.ext = "" then req.ext = "mp4"
     print "[KTV] play request kind=" + toS(req.kind) + " id=" + req.id + " ext=" + req.ext + " pcWhy=" + toS(req.pcWhy)
+    if toS(req.pcWhy) = "" and pcBase(m.cfg) <> "" and convNeeded(req) then req.pcWhy = "its sound needs the converter"
     if toS(req.pcWhy) <> "" then
         playViaPc(req, req.pcWhy, true)
     else
@@ -634,6 +635,7 @@ sub onNeedPc(e as object)
     if req = invalid then return
     m.pcKeep = (toS(a.keep) = "true")        ' asked from inside the player (audio): OK keeps the video playing
     if a.pos <> invalid and toI(a.pos) > 0 then req.start = toI(a.pos)
+    if toS(a.auto) = "true" then convRemember(req)
     print "[KTV] PC requested from player: " + toS(a.why) + " keep=" + toS(m.pcKeep) + " pc=" + toS(pcBase(m.cfg) <> "")
     playViaPc(req, toS(a.why), false)
 end sub
@@ -644,7 +646,7 @@ sub playViaPc(req as object, why as string, canTryDirect as boolean)
     m.pcCanTry = canTryDirect
     base = pcBase(m.cfg)
     if base = "" then
-        pcDialog("No PC set up yet", "“" + req.title + "” can't play fully on this Roku: " + why + "." + Chr(10) + "No PC address is set in Settings. Start Kevin TV on your PC with TV/LAN access (start.bat --host 0.0.0.0), then enter the PC's address in Settings.")
+        pcDialog("No PC set up yet", "“" + req.title + "” can't play fully on this Roku: " + why + "." + Chr(10) + "No converter address is set in Settings. Start the Kevin TV converter on your Mac (helper/start-helper.command), then enter the address it shows in Settings › PC address.")
         return
     end if
     t = CreateObject("roSGNode", "ApiTask")
@@ -660,7 +662,7 @@ sub onPcPing(e as object)
     r = e.getData()
     req = m.pcReq
     if not r.ok then
-        pcDialog("This one needs the PC", "“" + req.title + "” can't play directly on this Roku (" + m.pcWhy + "), and your PC isn't reachable right now. Turn on the PC and start Kevin TV with TV/LAN access, then try again.")
+        pcDialog("This one needs the PC", "“" + req.title + "” can't play directly on this Roku (" + m.pcWhy + "), and the converter on your Mac isn't reachable right now. Wake the Mac and double-click helper/start-helper.command, then try again.")
         return
     end if
     v = "0"
@@ -770,6 +772,7 @@ sub onPlayerDone_impl()
                 nr = {mode: "vod", kind: "series", id: e.id, ext: e.ext, title: toS(req.showTitle) + " · S" + e.sn + ":E" + e.n.ToStr() + " " + toS(e.t),
                       start: 0, key: "e:" + e.id, poster: req.poster, pcWhy: pcReason(e.ext, e.v, e.a), vcodec: e.v, acodec: e.a,
                       sid: req.sid, showTitle: req.showTitle, sn: e.sn, en: e.n, eps: lst, dur: toI(e.dur)}
+                if nr.pcWhy = "" and pcBase(m.cfg) <> "" and convNeeded(nr) then nr.pcWhy = "its sound needs the converter"
                 if nr.pcWhy <> "" then
                     playViaPc(nr, nr.pcWhy, true)
                 else

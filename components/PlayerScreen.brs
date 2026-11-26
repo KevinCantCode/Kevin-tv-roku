@@ -35,6 +35,12 @@ sub init()
     m.video.observeField("availableAudioTracks", "onTracks")
     m.devLogged = false
     m.lastPosSeen = 0
+    m.switching = false
+    ' v1.0.15: no sound this Roku can play -> the converter on the Mac (if set up). One check, 3 s after "playing".
+    m.noSoundTimer = CreateObject("roSGNode", "Timer")
+    m.noSoundTimer.duration = 3
+    m.noSoundTimer.repeat = false
+    m.noSoundTimer.observeField("fire", "onNoSound")
 end sub
 
 sub onReq()
@@ -81,7 +87,10 @@ sub startVod()
     print "[KTV] play start kind=" + toS(r.kind) + " id=" + toS(r.id) + " ext=" + toS(r.ext) + " fmt=" + fmt + " start=" + st.ToStr() + " viaPc=" + toS(r.viaPc) + " vcodec=" + toS(r.vcodec) + " acodec=" + toS(r.acodec) + " url=<hidden>"
     m.audioDone = false
     m.tracks = []
+    m.noSoundTimer.control = "stop"
     m.video.enableUI = true
+    m.switching = true               ' until "playing": a "finished" from the old stream is not the end of the title
+    m.video.control = "stop"         ' one provider connection: close any old stream first
     m.video.content = cn
     m.video.control = "play"
     m.video.setFocus(true)
@@ -285,6 +294,7 @@ sub handleState(st as dynamic)
             end if
         end if
     else if st = "playing" then
+        m.switching = false
         m.msg.visible = false
         if m.live then liveOk()
         if not m.audioDone then
@@ -294,6 +304,10 @@ sub handleState(st as dynamic)
         print "[player] playing  video=" + toS(m.video.videoFormat) + " audio=" + toS(m.video.audioFormat)
     else if st = "finished" then
         if not m.live then
+            if m.switching then
+                print "[KTV] player: 'finished' while switching streams ignored"
+                return
+            end if
             dur = toI(m.video.duration)
             lp = Int(m.lastPosSeen)
             if toS(m.top.req.viaPc) <> "true" and m.offset = 0 and dur > 300 and lp < dur * 0.9 then
@@ -323,6 +337,7 @@ function stopAndSave(a = invalid as dynamic) as boolean
     m.tuneTimer.control = "stop"
     m.retryTimer.control = "stop"
     m.stallTimer.control = "stop"
+    m.noSoundTimer.control = "stop"
     m.video.control = "stop"
     m.video.content = invalid
     return true
@@ -466,6 +481,10 @@ sub checkAudio(tracks as dynamic)
     if type(tracks) = "roArray" then m.tracks = tracks
     cur = toS(m.video.audioTrack)
     print "[KTV] audio: " + m.tracks.Count().ToStr() + " track(s), selected=" + cur + " audioFormat=" + toS(m.video.audioFormat) + " acodec(provider)=" + toS(m.top.req.acodec) + " live=" + toS(m.live)
+    if not m.live and m.tracks.Count() = 0 and noSound() and toS(m.top.req.viaPc) <> "true" and pcBase(m.cfg) <> "" then
+        m.noSoundTimer.control = "stop"
+        m.noSoundTimer.control = "start"     ' tracks sometimes show up a moment late: look again in 3 s
+    end if
     if m.tracks.Count() < 2 then return
     best = invalid
     bestScore = -999
@@ -492,6 +511,21 @@ sub checkAudio(tracks as dynamic)
         print "[KTV] audio: switching to track " + toS(best.Track)
         m.video.audioTrack = toS(best.Track)
     end if
+end sub
+
+function noSound() as boolean
+    f = LCase(toS(m.video.audioFormat))
+    return (f = "" or f = "none")
+end function
+
+sub onNoSound()
+    if m.live or toS(m.top.req.viaPc) = "true" then return
+    t = m.video.availableAudioTracks
+    if type(t) = "roArray" and t.Count() > 0 then return
+    if not noSound() then return
+    pos = Int(m.offset + m.video.position)
+    print "[KTV] audio: no sound this Roku can play -> converter (at " + pos.ToStr() + "s)"
+    m.top.needPc = {why: "this Roku can't play its sound", keep: true, auto: true, pos: pos}
 end sub
 
 ' some streams list their tracks a moment after "playing": check again once

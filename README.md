@@ -34,3 +34,21 @@ Audio mode → Auto.
 
 Lines starting with `[KTV] audio` show the device's answer for each codec and what the player chose, e.g.
 `[KTV] audio CanDecodeAudio(ac3)=false -> no`.
+
+## Converter on the Mac (for movies with no sound)
+
+`helper/kevintv_helper.py` runs on a Mac on the home network. When the Roku finds no sound it can play in a movie or
+episode, it switches to the converter, which fetches the file from the provider once, copies the video untouched and
+converts only the sound to stereo AAC. Titles that needed it are remembered (whole series at once), so next time
+they go straight to the converter.
+
+Start it: double-click `helper/start-helper.command` (the first time: right-click › Open, and allow incoming
+connections if macOS asks). It reads the login from `data/personal.json` and needs ffmpeg. Leave the window open
+while watching; it keeps the Mac awake during playback. On the Roku: Settings › PC address = the address the window
+shows (for example `192.168.68.120:8766`).
+
+Made for a 1-stream plan: one conversion at a time, a 4-second pause before connecting so the Roku's own stream has
+closed, no automatic retries, and the provider connection is closed when the Roku stops asking for 2 minutes. It
+refuses to convert while a VPN is connected, so provider traffic never goes through a work VPN (`--allow-vpn`
+overrides). It only answers devices on the home network. Converted pieces are kept in a temporary folder and
+deleted when the next title starts or the converter quits (a 3-hour movie can take several GB meanwhile).

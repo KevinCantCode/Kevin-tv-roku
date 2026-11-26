@@ -137,7 +137,7 @@ function pcBase(c as object) as string
     p = c.pc.Trim()
     if p = "" then return ""
     if Instr(1, p, "://") = 0 then p = "http://" + p
-    if Instr(8, p, ":") = 0 then p = p + ":8765"
+    if Instr(8, p, ":") = 0 then p = p + ":8766"
     if Right(p, 1) = "/" then p = Left(p, Len(p) - 1)
     return p
 end function
@@ -325,6 +325,42 @@ function resumeGet(key as string) as dynamic
     if d.DoesExist(key) then return d[key]
     return invalid
 end function
+
+' ---------------------------------------------------------------- titles that need the converter (v1.0.15)
+' A movie, or a whole series, whose sound this Roku couldn't play: next time it goes straight to the converter
+' (saves a provider connection on a 1-stream plan). One small JSON list in the registry, newest first, max 60.
+function convKey(req as object) as string
+    if toS(req.kind) = "series" and toS(req.sid) <> "" then return "s:" + toS(req.sid)
+    return Left(toS(req.kind), 1) + ":" + toS(req.id)
+end function
+
+function convList() as object
+    sec = CreateObject("roRegistrySection", "kevintv_conv")
+    if not sec.Exists("list") then return []
+    l = ParseJson(sec.Read("list"))
+    if type(l) <> "roArray" then return []
+    return l
+end function
+
+function convNeeded(req as object) as boolean
+    k = convKey(req)
+    for each x in convList()
+        if toS(x) = k then return true
+    end for
+    return false
+end function
+
+sub convRemember(req as object)
+    k = convKey(req)
+    out = [k]
+    for each x in convList()
+        if toS(x) <> k and out.Count() < 60 then out.Push(toS(x))
+    end for
+    sec = CreateObject("roRegistrySection", "kevintv_conv")
+    sec.Write("list", FormatJson(out))
+    sec.Flush()
+    print "[KTV] converter: remembered " + k + " (" + out.Count().ToStr() + " titles)"
+end sub
 
 ' formats Roku can't decode directly -> route through the PC
 function pcReason(ext as dynamic, vcodec as dynamic, acodec as dynamic) as string

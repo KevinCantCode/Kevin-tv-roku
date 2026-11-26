@@ -62,7 +62,7 @@ sub onSelect()
             d.keyboardDomain = "password"
             d.textEditBox.secureMode = true
         end if
-        if r.k = "pc" then d.message = ["Your PC's address on your home network, e.g. 192.168.1.20 (port 8765 is added). Start Kevin TV on the PC with LAN access turned on."]
+        if r.k = "pc" then d.message = ["Your PC's address on your home network, e.g. 192.168.1.20 (port 8766 is added). Start the Kevin TV converter (helper/start-helper.command) on that computer."]
         if r.k = "metaurl" then d.message = ["Leave empty to use the snapshot built into this app."]
         d.observeField("buttonSelected", "onDialogButton")
         d.observeField("wasClosed", "onDialogClosed")
