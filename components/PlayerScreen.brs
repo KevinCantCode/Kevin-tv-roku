@@ -110,11 +110,11 @@ sub saveResume(finished as boolean)
     r = m.top.req
     if r = invalid or r.key = invalid or m.live then return
     cur = m.offset + m.video.position
-    ' total length: the catalog's runtime first. Through the PC the stream is a growing HLS "event" playlist,
-    ' so Video.duration is only what has been converted so far (it made every PC-played episode look finished).
+    ' total length: the catalog's runtime first (the converter's playlist is the full movie since v1.0.17),
+    ' Video.duration is the fallback.
     dur = toI(r.dur)
     vd = m.video.duration
-    if dur <= 0 and toS(r.viaPc) <> "true" and vd > 0 then dur = m.offset + vd
+    if dur <= 0 and vd > 0 then dur = m.offset + vd
     if finished then
         if dur <= 0 then dur = Int(cur)
         cur = dur

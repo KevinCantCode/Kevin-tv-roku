@@ -2,24 +2,32 @@
 """Kevin TV converter for Roku.
 
 Runs on a computer on the home network (the Mac). The Roku asks it for movies/episodes whose sound it can't
-play (Dolby Digital Plus, DTS, ...). It fetches the file from the provider once, passes the video through
-untouched, converts only the sound to stereo AAC, and serves the result to the Roku as HLS.
+play (Dolby Digital Plus, DTS, ...). It fetches the file from the provider, converts the sound to stereo AAC and
+re-encodes the video (hardware encoder, a keyframe every 6 s so seeking is exact), and serves it to the Roku as an ordinary (VOD) HLS movie: the full
+length is known up front, so the Roku's seek bar covers the whole film.
+
+Conversion runs ahead of playback (several times faster than real time). Jumping to a part that isn't
+converted yet restarts the conversion from there.
 
 Built for a provider plan that allows ONE stream at a time:
-  * only one conversion runs at a time; starting another stops the first before opening a new connection
-  * it waits a few seconds before connecting, so the Roku's own stream has closed first
-  * it never retries on its own
-  * if the Roku stops asking for the stream (stopped, crashed, turned off) the provider connection is closed
+  * one provider connection at most: a restart closes the old one first
+  * before connecting it asks the provider (account info, not a stream) until a stream slot is free
+  * it never retries a stream on its own
+  * if the Roku stops asking (stopped, crashed, turned off) the provider connection is closed
+  * it refuses to fetch through a VPN unless started with --allow-vpn
 
 Standard library only (Python 3.9+). Needs ffmpeg.
 """
 import argparse
+import collections
 import ipaddress
 import json
+import math
 import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -29,25 +37,50 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0"
+VERSION = "1.1"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) KevinTV/1.0"
-START_DELAY = 4.0        # seconds to wait before connecting to the provider (lets the Roku's stream close)
+SEG = 6                  # seconds per HLS segment
+AHEAD = 30               # a segment this many past the converted part is waited for, not restarted (3 min of video)
 IDLE_STOP = 120.0        # no requests from the Roku for this long -> stop converting (closes the provider stream)
-FIRST_SEGMENTS = 2       # segments ready before the playlist is handed to the Roku
-PLAYLIST_WAIT = 30.0     # longest the Roku is kept waiting for the first segments
-SEGMENT_SECS = 6
-FREE_WAIT = 45.0         # longest wait for the provider to free the single connection
-FREE_POLL = 5.0          # seconds between account checks while waiting (light API call, not a stream)
-WORK = os.path.join(tempfile.gettempdir(), "kevintv-helper")
+FREE_WAIT = 60.0         # longest wait for the provider to free the single stream slot
+FREE_POLL = 8.0          # seconds between account checks while waiting (at most ~8 checks per wait)
+SEEK_SETTLE = 1.5        # after a far jump, wait this long for the Roku to settle on one spot before restarting
+SEG_WAIT = 45.0          # longest a segment request waits for its segment to be converted
+DUR_WAIT = 40.0          # longest the playlist waits to learn the movie's length from ffmpeg
+FAILED_HOLD = 90.0       # after a failure, the same title isn't retried by itself for this long
+WORK = ""                # temp folder for this helper only (set in main, one per port)
 
 CFG = {}
 FFMPEG = "ffmpeg"
 ALLOW_VPN = False
+HW = False               # the Mac's hardware video encoder/decoder (VideoToolbox) is available
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+def redact(s):
+    """Never print the provider login."""
+    s = str(s)
+    s = re.sub(r"https?://[^\s'\"]+", "<url>", s)
+    for k in ("user", "pass"):
+        v = CFG.get(k) or ""
+        if len(v) >= 4:
+            s = s.replace(v, "<" + k + ">").replace(urllib.parse.quote(v, safe=""), "<" + k + ">")
+    return s
+
+
+def q(x):
+    return urllib.parse.quote(x, safe="")
+
+
+def provider_url(kind, sid, ext):
+    return "%s/%s/%s/%s/%s.%s" % (CFG["server"].rstrip("/"), kind, q(CFG["user"]), q(CFG["pass"]), sid, ext)
 
 
 def connections_in_use():
     """(active, max) from the provider's account info, or None if it can't be read. Not a stream."""
-    q = lambda x: urllib.parse.quote(x, safe="")
     u = "%s/player_api.php?username=%s&password=%s" % (CFG["server"].rstrip("/"), q(CFG["user"]), q(CFG["pass"]))
     try:
         with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=10) as r:
@@ -63,9 +96,7 @@ def provider_route():
     if sys.platform != "darwin":
         return ""
     try:
-        import socket
-        host = urllib.parse.urlparse(CFG["server"]).hostname
-        ip = socket.gethostbyname(host)
+        ip = socket.gethostbyname(urllib.parse.urlparse(CFG["server"]).hostname)
         out = subprocess.run(["route", "-n", "get", ip], capture_output=True, text=True, timeout=5).stdout
         m = re.search(r"interface:\s*(\S+)", out)
         return m.group(1) if m else ""
@@ -83,150 +114,200 @@ def vpn_block():
     return ""
 
 
-def log(*a):
-    print(time.strftime("%H:%M:%S"), *a, flush=True)
-
-
-def redact(s):
-    """Never print the provider login."""
-    s = str(s)
-    for k in ("user", "pass"):
-        v = CFG.get(k) or ""
-        if v:
-            s = s.replace(v, "<" + k + ">").replace(urllib.parse.quote(v, safe=""), "<" + k + ">")
-    return re.sub(r"https?://[^\s'\"]+", "<url>", s)
-
-
-def provider_url(kind, sid, ext):
-    q = lambda x: urllib.parse.quote(x, safe="")
-    return "%s/%s/%s/%s/%s.%s" % (CFG["server"].rstrip("/"), kind, q(CFG["user"]), q(CFG["pass"]), sid, ext)
-
-
-# ---------------------------------------------------------------- one conversion at a time
-class Session:
-    def __init__(self, key, kind, sid, ext, start, vmode):
-        self.key = key
-        self.kind, self.sid, self.ext, self.start, self.vmode = kind, sid, ext, start, vmode
-        self.id = "%x" % int(time.time() * 1000)
-        self.dir = os.path.join(WORK, self.id)
-        os.makedirs(self.dir, exist_ok=True)
+# ---------------------------------------------------------------- one conversion run (= one provider connection)
+class Run:
+    def __init__(self, sess, start_idx):
+        self.sess = sess
+        self.start = start_idx
         self.proc = None
-        self.awake = None
         self.cancelled = False
-        self.state = "waiting"       # waiting -> converting -> done | failed | stopped
+        self.state = "waiting"            # waiting -> converting -> done | failed | stopped
         self.error = ""
-        self.last = time.time()
-        self.t0 = time.time()
+        self.tail = collections.deque(maxlen=12)
+        self.ended = 0.0
+        threading.Thread(target=self._guard, daemon=True).start()
 
-    @property
-    def playlist(self):
-        return os.path.join(self.dir, "index.m3u8")
+    def active(self):
+        return self.state in ("waiting", "converting")
 
-    def touch(self):
-        self.last = time.time()
+    def _sleep(self, secs):
+        end = time.time() + secs
+        while time.time() < end:
+            if self.cancelled:
+                return False
+            time.sleep(0.2)
+        return not self.cancelled
 
-    def run(self):
+    def _fail(self, why):
+        self.state = "failed"
+        self.error = why
+        self.ended = time.time()
+        log("[%s] not converting: %s" % (self.sess.id, why))
+
+    def _guard(self):
         try:
             self._run()
         except Exception as e:
-            self.state = "failed"
-            self.error = "helper error: " + redact(e)
-            log("[%s] %s" % (self.id, self.error))
-            self.release_awake()
+            self._fail("helper error: " + redact(e))
 
     def _run(self):
-        # wait for the Roku's own provider stream to close; a newer request may cancel us meanwhile
-        end = time.time() + START_DELAY
-        while time.time() < end:
-            if self.cancelled:
-                return
-            time.sleep(0.2)
-        if self.cancelled:
-            return
+        s = self.sess
         why = vpn_block()
         if why:
-            self.state = "failed"
-            self.error = "not converting: " + why
-            log("[%s] %s" % (self.id, self.error))
-            return
-        # the provider takes a while to notice the Roku's own stream has closed: wait until it says a slot is free
+            return self._fail(why)
+        # wait until the provider has a free stream slot (the Roku's own stream, or our previous run, may still count)
         give_up = time.time() + FREE_WAIT
         while True:
+            if self.cancelled:
+                return
             c = connections_in_use()
             if c is None or c[0] < c[1]:
                 break
             if time.time() >= give_up:
-                self.state = "failed"
-                self.error = "your provider still counts another stream as playing (%d of %d in use)" % c
-                log("[%s] not converting: %s. Stop it on the other device and play again." % (self.id, self.error))
+                return self._fail("your provider still counts another stream as playing (%d of %d in use). "
+                                  "Stop it on the other device and play again" % c)
+            log("[%s] provider says %d of %d streams in use; checking again in %ds" % (s.id, c[0], c[1], FREE_POLL))
+            if not self._sleep(FREE_POLL):
                 return
-            log("[%s] provider says %d of %d streams in use; checking again in %ds" % (self.id, c[0], c[1], FREE_POLL))
-            end = time.time() + FREE_POLL
-            while time.time() < end:
-                if self.cancelled:
-                    return
-                time.sleep(0.2)
-        cmd = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-user_agent", UA]
-        if self.start > 0:
-            cmd += ["-ss", str(self.start)]
+        if self.cancelled:
+            return
+        at = self.start * SEG
+        cmd = [FFMPEG, "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info", "-user_agent", UA]
+        if HW:
+            cmd += ["-hwaccel", "videotoolbox"]
+        if at > 0:
+            cmd += ["-ss", str(at)]
         else:
             cmd += ["-seekable", "0"]          # read straight through: no extra range requests to the provider
-        cmd += ["-i", provider_url(self.kind, self.sid, self.ext),
-                "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-max_muxing_queue_size", "4096"]
-        if self.vmode == "1":
-            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"]
+        # output clock starts at exactly the jump point, so piece N always plays at N*SEG on the Roku's timeline
+        # (and pieces from different runs line up), even if the provider can only seek approximately
+        cmd += ["-i", provider_url(s.kind, s.sid, s.ext),
+                "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-max_muxing_queue_size", "4096",
+                "-muxdelay", "0", "-output_ts_offset", str(at)]
+        # The video is re-encoded with a keyframe exactly every SEG seconds. Passing it through untouched can
+        # only cut where the file has keyframes (often 10 s apart), so piece N wouldn't start at N*SEG and
+        # seeking would drift. The Mac's hardware encoder does this faster than the provider sends the file.
+        if HW:
+            cmd += ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", "10M", "-maxrate", "15M", "-bufsize", "20M"]
         else:
-            cmd += ["-c:v", "copy"]
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-maxrate", "15M", "-bufsize", "20M"]
+        cmd += ["-pix_fmt", "yuv420p", "-force_key_frames", "expr:gte(t,n_forced*%d)" % SEG]
         cmd += ["-c:a", "aac", "-ac", "2", "-b:a", "192k",
-                "-f", "hls", "-hls_time", str(SEGMENT_SECS), "-hls_list_size", "0",
-                "-hls_playlist_type", "event", "-hls_segment_type", "mpegts", "-start_number", "0",
-                "-hls_segment_filename", os.path.join(self.dir, "seg%05d.ts"), self.playlist]
-        err = open(os.path.join(self.dir, "ffmpeg.log"), "wb")
-        log("[%s] converting %s %s.%s from %ss (video %s) - 1 provider connection" % (
-            self.id, self.kind, self.sid, self.ext, self.start, "re-encode" if self.vmode == "1" else "copy"))
+                "-f", "hls", "-hls_time", str(SEG), "-hls_list_size", "0", "-hls_segment_type", "mpegts",
+                "-hls_flags", "temp_file", "-start_number", str(self.start),
+                "-hls_segment_filename", os.path.join(s.dir, "seg%05d.ts"),
+                os.path.join(s.dir, "run%05d.m3u8" % self.start)]
+        log("[%s] converting %s %s.%s from %s - 1 provider connection" % (s.id, s.kind, s.sid, s.ext, hms(at)))
         self.state = "converting"
-        self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
-        if sys.platform == "darwin" and shutil.which("caffeinate"):
-            # keep the Mac awake while the Roku is watching (stopped when the session ends)
-            self.awake = subprocess.Popen(["caffeinate", "-i"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        t0 = time.time()
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        # read ffmpeg's messages in memory only (they contain the stream address, i.e. the login)
+        for raw in self.proc.stderr:
+            line = raw.decode("utf-8", "replace").rstrip()
+            if s.duration is None:
+                m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", line)
+                if m:
+                    s.duration = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+                    log("[%s] movie length %s" % (s.id, hms(s.duration)))
+            if line and not line.startswith(" "):
+                self.tail.append(redact(line))
         rc = self.proc.wait()
-        err.close()
+        self.ended = time.time()
         if self.cancelled:
             self.state = "stopped"
         elif rc == 0:
             self.state = "done"
-            log("[%s] conversion finished in %ds; provider stream closed" % (self.id, time.time() - self.t0))
+            log("[%s] converted to the end in %ds; provider stream closed" % (s.id, time.time() - t0))
         else:
-            self.state = "failed"
-            try:
-                with open(os.path.join(self.dir, "ffmpeg.log"), "rb") as f:
-                    self.error = redact(f.read().decode("utf-8", "replace").strip().splitlines()[-1][:300])
-            except Exception:
-                self.error = "ffmpeg exited with code %s" % rc
-            log("[%s] conversion FAILED: %s" % (self.id, self.error))
+            err = [l for l in self.tail if "rror" in l or "fail" in l.lower()] or list(self.tail) or ["exit code %s" % rc]
+            self._fail(err[-1][:300])
 
     def stop(self, why):
         self.cancelled = True
         if self.proc and self.proc.poll() is None:
-            log("[%s] stopping conversion (%s); closing provider stream" % (self.id, why))
+            log("[%s] stopping conversion (%s); closing provider stream" % (self.sess.id, why))
             self.proc.terminate()
             try:
                 self.proc.wait(5)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
                 self.proc.wait()
-        self.release_awake()
+        if self.state in ("waiting", "converting"):
+            self.state = "stopped"
+            self.ended = time.time()
+
+
+def hms(secs):
+    secs = int(secs)
+    return "%d:%02d:%02d" % (secs // 3600, secs % 3600 // 60, secs % 60)
+
+
+# ---------------------------------------------------------------- one title (kept until another title is played)
+class Session:
+    def __init__(self, key, kind, sid, ext, vmode):
+        self.key = key
+        self.kind, self.sid, self.ext, self.vmode = kind, sid, ext, vmode
+        self.id = "%x" % int(time.time() * 1000)
+        self.dir = os.path.join(WORK, self.id)
+        os.makedirs(self.dir, exist_ok=True)
+        self.lock = threading.RLock()
+        self.run = None
+        self.duration = None
+        self.want = None              # latest far-jump target (segment index)
+        self.last = time.time()
+        self.awake = None
+
+    def touch(self):
+        self.last = time.time()
+        if self.awake is None and sys.platform == "darwin" and shutil.which("caffeinate"):
+            # keep the Mac awake while the Roku is watching
+            self.awake = subprocess.Popen(["caffeinate", "-i"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def release_awake(self):
         if self.awake and self.awake.poll() is None:
             self.awake.terminate()
         self.awake = None
 
-    def segments(self):
-        try:
-            return sum(1 for n in os.listdir(self.dir) if n.endswith(".ts"))
-        except OSError:
+    def seg_path(self, i):
+        return os.path.join(self.dir, "seg%05d.ts" % i)
+
+    def have(self, i):
+        return os.path.exists(self.seg_path(i))
+
+    def count(self):
+        if not self.duration:
             return 0
+        return int(math.ceil(self.duration / SEG))
+
+    def head(self):
+        """Last segment the current run has produced (or start - 1)."""
+        r = self.run
+        if not r:
+            return -1
+        i = r.start
+        while self.have(i):
+            i += 1
+        return i - 1
+
+    def start_run(self, idx, why):
+        with self.lock:
+            r = self.run
+            if r and r.active():
+                if r.start == idx:
+                    return r
+                r.stop(why)
+            self.run = Run(self, idx)
+            return self.run
+
+    def recently_failed(self):
+        r = self.run
+        return r is not None and r.state == "failed" and time.time() - r.ended < FAILED_HOLD
+
+    def stop(self, why):
+        with self.lock:
+            if self.run:
+                self.run.stop(why)
+        self.release_awake()
 
     def remove(self):
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -237,21 +318,17 @@ class Manager:
         self.lock = threading.Lock()
         self.cur = None
 
-    def get(self, kind, sid, ext, start, vmode):
-        key = (kind, sid, ext, start, vmode)
+    def get(self, kind, sid, ext, vmode):
+        key = (kind, sid, ext, vmode)
         with self.lock:
             s = self.cur
-            if s and s.key == key and s.state not in ("failed", "stopped"):
-                s.touch()
+            if s and s.key == key:
                 return s
-            if s and s.key == key and s.state == "failed" and time.time() - s.last < 90:
-                return s                     # just failed: report it again, never retry the provider by itself
             if s:
-                s.stop("a new title was asked for")
+                s.stop("a different title was asked for")
                 s.remove()
-            s = Session(key, kind, sid, ext, start, vmode)
+            s = Session(key, kind, sid, ext, vmode)
             self.cur = s
-            threading.Thread(target=s.run, daemon=True).start()
             return s
 
     def by_id(self, sid):
@@ -267,8 +344,8 @@ class Manager:
                     continue
                 idle = time.time() - s.last
                 if idle > IDLE_STOP:
-                    if s.state in ("waiting", "converting"):
-                        s.stop("the Roku stopped watching %ds ago" % idle)
+                    if s.run and s.run.active():
+                        s.run.stop("the Roku stopped watching %ds ago" % idle)
                     s.release_awake()
                 if idle > 6 * 3600:
                     s.remove()
@@ -287,7 +364,18 @@ MGR = Manager()
 
 # ---------------------------------------------------------------- HTTP
 ROKU_PATH = re.compile(r"^/roku/(movie|series)/(\d+)\.([A-Za-z0-9]{1,5})/index\.m3u8$")
-SEG_PATH = re.compile(r"^/s/([0-9a-f]+)/(seg\d{5}\.ts)$")
+SEG_PATH = re.compile(r"^/s/([0-9a-f]+)/seg(\d{5})\.ts$")
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # the Roku closing a connection it no longer needs is normal: don't print a traceback for it
+        e = sys.exc_info()[1]
+        if isinstance(e, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -297,15 +385,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def send(self, code, body, ctype="text/plain; charset=utf-8", extra=None):
+    def send(self, code, body, ctype="text/plain; charset=utf-8"):
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        for k, v in (extra or {}).items():
-            self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -324,80 +410,108 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.send(403, "home network only")
         u = urllib.parse.urlparse(self.path)
-        q = urllib.parse.parse_qs(u.query)
+        qs = urllib.parse.parse_qs(u.query)
         if u.path == "/api/status":
             why = vpn_block()
             if why:
                 log("status check refused: " + why)
                 return self.send(503, json.dumps({"ok": False, "status": why}), "application/json")
             s = MGR.cur
-            busy = bool(s and s.state in ("waiting", "converting"))
+            busy = bool(s and s.run and s.run.active())
             return self.send(200, json.dumps({"ok": True, "status": "ready", "app": "kevintv-helper",
                                               "version": VERSION, "busy": busy}), "application/json")
         m = ROKU_PATH.match(u.path)
         if m:
-            return self.playlist(m.group(1), m.group(2), m.group(3).lower(), q)
+            return self.playlist(m.group(1), m.group(2), m.group(3).lower(), qs)
         m = SEG_PATH.match(u.path)
         if m:
-            return self.segment(m.group(1), m.group(2))
+            return self.segment(m.group(1), int(m.group(2)))
         return self.send(404, "not found")
 
-    def playlist(self, kind, sid, ext, q):
-        try:
-            start = max(0, int(float((q.get("t") or ["0"])[0])))
-        except ValueError:
-            start = 0
-        vmode = (q.get("v") or ["0"])[0]
+    # the whole movie as a normal VOD playlist (fixed 6 s pieces, numbered by time), so the Roku can seek anywhere
+    def playlist(self, kind, sid, ext, qs):
+        def num(name):
+            try:
+                return max(0, int(float((qs.get(name) or ["0"])[0])))
+            except ValueError:
+                return 0
+        start, hint = num("t"), num("d")
+        vmode = (qs.get("v") or ["0"])[0]
         if vmode not in ("0", "1", "auto"):
             vmode = "0"
-        s = MGR.get(kind, sid, ext, start, vmode)
-        first = s.segments() < FIRST_SEGMENTS
-        if first:
-            log("[%s] Roku asked for %s %s.%s at %ss" % (s.id, kind, sid, ext, start))
-        deadline = time.time() + PLAYLIST_WAIT
-        while time.time() < deadline:
-            if s.state in ("failed", "stopped"):
-                break
-            if os.path.exists(s.playlist) and (s.segments() >= FIRST_SEGMENTS or s.state == "done"):
-                break
-            time.sleep(0.25)
+        s = MGR.get(kind, sid, ext, vmode)
         s.touch()
-        if s.state == "failed":
-            return self.send(502, "conversion failed: " + s.error)
-        if not os.path.exists(s.playlist):
-            return self.send(504, "the provider didn't send anything in time")
-        with open(s.playlist, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
-        out = []
-        for line in text.splitlines():
-            if line.startswith("#EXTM3U"):
-                out.append(line)
-                out.append("#EXT-X-START:TIME-OFFSET=0,PRECISE=YES")   # play from the start, not the live edge
-            elif line and not line.startswith("#"):
-                out.append("/s/%s/%s" % (s.id, line.strip()))
-            else:
-                out.append(line)
-        if first:
-            log("[%s] playlist ready (%d segments) after %.1fs" % (s.id, s.segments(), time.time() - s.t0))
+        idx = start // SEG
+        log("[%s] Roku asked for %s %s.%s from %s" % (s.id, kind, sid, ext, hms(start)))
+        if not s.have(idx) and not (s.run and s.run.active()):
+            if s.recently_failed():
+                return self.send(503, "conversion failed a moment ago: " + s.run.error)
+            s.start_run(idx, "new play")
+        if not s.duration and hint > 0:
+            s.duration = float(hint)          # the catalog's runtime; replaced by ffmpeg's if this play learns it
+        deadline = time.time() + DUR_WAIT
+        while not s.duration and time.time() < deadline:
+            if s.run and s.run.state == "failed":
+                return self.send(502, "conversion failed: " + s.run.error)
+            time.sleep(0.25)
+        if not s.duration:
+            return self.send(504, "couldn't learn the movie's length in time")
+        n = s.count()
+        out = ["#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-TARGETDURATION:%d" % SEG,
+               "#EXT-X-MEDIA-SEQUENCE:0"]
+        for i in range(n):
+            d = min(SEG, s.duration - i * SEG)
+            out.append("#EXTINF:%.3f," % max(d, 0.1))
+            out.append("/s/%s/seg%05d.ts" % (s.id, i))
+        out.append("#EXT-X-ENDLIST")
         return self.send(200, "\n".join(out) + "\n", "application/vnd.apple.mpegurl")
 
-    def segment(self, sess_id, name):
+    def segment(self, sess_id, i):
         s = MGR.by_id(sess_id)
         if not s:
             return self.send(410, "this conversion has ended; play the title again")
         s.touch()
-        path = os.path.join(s.dir, name)
-        if not os.path.exists(path):
-            return self.send(404, "segment not ready")
-        size = os.path.getsize(path)
-        self.send_response(200)
-        self.send_header("Content-Type", "video/mp2t")
-        self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        if self.command == "HEAD":
-            return
-        with open(path, "rb") as f:
+        if s.count() and i >= s.count():
+            return self.send(404, "past the end")
+        if not s.have(i):
+            r = s.run
+            near = r is not None and r.active() and r.start <= i <= s.head() + AHEAD
+            if not near:
+                # a jump to a part that isn't converted: let the Roku settle, then restart there (one connection)
+                s.want = i
+                time.sleep(SEEK_SETTLE)
+                if s.want != i:
+                    return self.send(503, "superseded by a newer jump")
+                if not s.have(i):
+                    if s.recently_failed() and s.run.start == i:
+                        return self.send(503, "conversion failed a moment ago: " + s.run.error)
+                    log("[%s] Roku jumped to %s, which isn't converted yet" % (s.id, hms(i * SEG)))
+                    s.start_run(i, "the Roku jumped to %s" % hms(i * SEG))
+            deadline = time.time() + SEG_WAIT
+            while not s.have(i) and time.time() < deadline:
+                r = s.run
+                if r is None or r.state in ("failed", "stopped"):
+                    break
+                if r.state == "done" and not s.have(i):
+                    break
+                time.sleep(0.25)
+                s.touch()
+            if not s.have(i):
+                return self.send(503, "not converted yet")
+        path = s.seg_path(i)
+        try:
+            size = os.path.getsize(path)
+            f = open(path, "rb")
+        except OSError:
+            return self.send(503, "not converted yet")
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
             try:
                 shutil.copyfileobj(f, self.wfile, 256 * 1024)
             except (BrokenPipeError, ConnectionResetError):
@@ -421,7 +535,6 @@ def load_config(path):
 
 
 def lan_ip():
-    import socket
     if sys.platform == "darwin":
         for ifc in ("en0", "en1"):
             try:
@@ -441,7 +554,7 @@ def lan_ip():
 
 
 def main():
-    global CFG, FFMPEG, ALLOW_VPN
+    global CFG, FFMPEG, ALLOW_VPN, HW, WORK
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description="Kevin TV converter for Roku")
     ap.add_argument("--port", type=int, default=8766)
@@ -457,12 +570,18 @@ def main():
     if not os.path.exists(FFMPEG) and not shutil.which(FFMPEG):
         raise SystemExit("ffmpeg not found; install it or pass --ffmpeg /path/to/ffmpeg")
 
+    try:
+        enc = subprocess.run([FFMPEG, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=10).stdout
+        HW = sys.platform == "darwin" and "h264_videotoolbox" in enc
+    except Exception:
+        HW = False
+
+    WORK = os.path.join(tempfile.gettempdir(), "kevintv-helper-%d" % a.port)
     shutil.rmtree(WORK, ignore_errors=True)
     os.makedirs(WORK, exist_ok=True)
     threading.Thread(target=MGR.watchdog, daemon=True).start()
 
-    srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
-    srv.daemon_threads = True
+    srv = Server(("0.0.0.0", a.port), Handler)
 
     def bye(*_):
         MGR.stop_all()
@@ -471,7 +590,7 @@ def main():
     signal.signal(signal.SIGINT, bye)
     signal.signal(signal.SIGTERM, bye)
 
-    log("Kevin TV converter %s running." % VERSION)
+    log("Kevin TV converter %s running (%s video encoding)." % (VERSION, "hardware" if HW else "software"))
     log("On the Roku: Kevin TV > Settings > PC address = %s:%d" % (lan_ip(), a.port))
     log("Leave this window open while watching. Ctrl+C stops it.")
     why = vpn_block()

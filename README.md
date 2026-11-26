@@ -38,17 +38,18 @@ Lines starting with `[KTV] audio` show the device's answer for each codec and wh
 ## Converter on the Mac (for movies with no sound)
 
 `helper/kevintv_helper.py` runs on a Mac on the home network. When the Roku finds no sound it can play in a movie or
-episode, it switches to the converter, which fetches the file from the provider once, copies the video untouched and
-converts only the sound to stereo AAC. Titles that needed it are remembered (whole series at once), so next time
-they go straight to the converter.
+episode, it switches to the converter, which fetches the file from the provider, converts the sound to stereo AAC and
+re-encodes the video with the Mac's hardware encoder (a keyframe every 6 s, so seeking is exact). The Roku gets an
+ordinary full-length movie: the seek bar covers the whole film. Conversion runs several times faster than playback;
+jumping past what's converted restarts it from there. Titles that needed it are remembered (whole series at once).
 
-Start it: double-click `helper/start-helper.command` (the first time: right-click › Open, and allow incoming
-connections if macOS asks). It reads the login from `data/personal.json` and needs ffmpeg. Leave the window open
-while watching; it keeps the Mac awake during playback. On the Roku: Settings › PC address = the address the window
-shows (for example `192.168.68.120:8766`).
+Start it: double-click `helper/start-helper.command` (first time: right-click › Open, and allow incoming connections).
+It reads the login from `data/personal.json` and needs ffmpeg. Leave the window open while watching; it keeps the Mac
+awake. On the Roku: Settings › PC address = the address the window shows (for example `192.168.68.120:8766`).
 
-Made for a 1-stream plan: one conversion at a time, a 4-second pause before connecting so the Roku's own stream has
-closed, no automatic retries, and the provider connection is closed when the Roku stops asking for 2 minutes. It
-refuses to convert while a VPN is connected, so provider traffic never goes through a work VPN (`--allow-vpn`
-overrides). It only answers devices on the home network. Converted pieces are kept in a temporary folder and
-deleted when the next title starts or the converter quits (a 3-hour movie can take several GB meanwhile).
+Made for a 1-stream plan: at most one provider connection (a restart closes the old one first), it checks the
+account until a stream slot is free before connecting (every 8 s, up to 60 s), it never retries a stream by itself,
+and it closes the provider connection when the Roku stops asking for 2 minutes. It refuses to convert while a VPN is
+connected (`--allow-vpn` overrides): besides keeping provider traffic off a work VPN, the provider may treat the Mac
+and the Roku as one household only when both use the home internet address. It only answers devices on the home
+network. Converted pieces live in a temporary folder that is deleted when another title starts or the converter quits.

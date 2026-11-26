@@ -673,9 +673,11 @@ sub onPcPing(e as object)
     if req.start <> invalid then st = Int(req.start)
     nr = {}
     nr.Append(req)
-    nr.url = pcBase(m.cfg) + "/roku/" + req.kind + "/" + req.id + "." + req.ext + "/index.m3u8?t=" + st.ToStr() + "&v=" + v
+    ' v1.0.17: the converter serves the whole movie (seekable), so play it from st instead of offsetting
+    nr.url = pcBase(m.cfg) + "/roku/" + req.kind + "/" + req.id + "." + req.ext + "/index.m3u8?t=" + st.ToStr() + "&v=" + v + "&d=" + toI(req.dur).ToStr()
     nr.fmt = "hls"
-    nr.offset = st
+    nr.offset = 0
+    nr.start = st
     nr.viaPc = true
     startPlayer(nr)
 end sub
