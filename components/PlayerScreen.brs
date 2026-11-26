@@ -523,9 +523,9 @@ sub onNoSound()
     t = m.video.availableAudioTracks
     if type(t) = "roArray" and t.Count() > 0 then return
     if not noSound() then return
-    pos = Int(m.offset + m.video.position)
-    print "[KTV] audio: no sound this Roku can play -> converter (at " + pos.ToStr() + "s)"
-    m.top.needPc = {why: "this Roku can't play its sound", keep: true, auto: true, pos: pos}
+    at = Int(m.offset + m.video.position)
+    print "[KTV] audio: no sound this Roku can play -> converter (at " + at.ToStr() + "s)"
+    m.top.needPc = {why: "this Roku can't play its sound", keep: true, auto: true, pos: at}
 end sub
 
 ' some streams list their tracks a moment after "playing": check again once
