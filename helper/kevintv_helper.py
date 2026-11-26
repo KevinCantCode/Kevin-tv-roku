@@ -26,6 +26,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VERSION = "1.0"
@@ -35,11 +36,26 @@ IDLE_STOP = 120.0        # no requests from the Roku for this long -> stop conve
 FIRST_SEGMENTS = 2       # segments ready before the playlist is handed to the Roku
 PLAYLIST_WAIT = 30.0     # longest the Roku is kept waiting for the first segments
 SEGMENT_SECS = 6
+FREE_WAIT = 45.0         # longest wait for the provider to free the single connection
+FREE_POLL = 5.0          # seconds between account checks while waiting (light API call, not a stream)
 WORK = os.path.join(tempfile.gettempdir(), "kevintv-helper")
 
 CFG = {}
 FFMPEG = "ffmpeg"
 ALLOW_VPN = False
+
+
+def connections_in_use():
+    """(active, max) from the provider's account info, or None if it can't be read. Not a stream."""
+    q = lambda x: urllib.parse.quote(x, safe="")
+    u = "%s/player_api.php?username=%s&password=%s" % (CFG["server"].rstrip("/"), q(CFG["user"]), q(CFG["pass"]))
+    try:
+        with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=10) as r:
+            info = json.loads(r.read().decode("utf-8", "replace")).get("user_info") or {}
+        return int(info.get("active_cons") or 0), int(info.get("max_connections") or 1)
+    except Exception as e:
+        log("account check failed: " + redact(e))
+        return None
 
 
 def provider_route():
@@ -110,6 +126,15 @@ class Session:
         self.last = time.time()
 
     def run(self):
+        try:
+            self._run()
+        except Exception as e:
+            self.state = "failed"
+            self.error = "helper error: " + redact(e)
+            log("[%s] %s" % (self.id, self.error))
+            self.release_awake()
+
+    def _run(self):
         # wait for the Roku's own provider stream to close; a newer request may cancel us meanwhile
         end = time.time() + START_DELAY
         while time.time() < end:
@@ -124,6 +149,23 @@ class Session:
             self.error = "not converting: " + why
             log("[%s] %s" % (self.id, self.error))
             return
+        # the provider takes a while to notice the Roku's own stream has closed: wait until it says a slot is free
+        give_up = time.time() + FREE_WAIT
+        while True:
+            c = connections_in_use()
+            if c is None or c[0] < c[1]:
+                break
+            if time.time() >= give_up:
+                self.state = "failed"
+                self.error = "your provider still counts another stream as playing (%d of %d in use)" % c
+                log("[%s] not converting: %s. Stop it on the other device and play again." % (self.id, self.error))
+                return
+            log("[%s] provider says %d of %d streams in use; checking again in %ds" % (self.id, c[0], c[1], FREE_POLL))
+            end = time.time() + FREE_POLL
+            while time.time() < end:
+                if self.cancelled:
+                    return
+                time.sleep(0.2)
         cmd = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-user_agent", UA]
         if self.start > 0:
             cmd += ["-ss", str(self.start)]
