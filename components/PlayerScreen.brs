@@ -30,34 +30,11 @@ sub init()
     m.stallTimer.duration = 20
     m.stallTimer.repeat = false
     m.stallTimer.observeField("fire", "onStall")
-    m.aPanel = m.top.findNode("aPanel")
-    m.aList = m.top.findNode("aList")
-    m.aList.observeField("itemSelected", "onAudioPick")
     m.audioDone = false
-    m.userPicked = false
     m.tracks = []
     m.video.observeField("availableAudioTracks", "onTracks")
-    m.aHead = m.top.findNode("aHead")
-    m.aTip = m.top.findNode("aTip")
-    m.provTried = false
-    m.provActive = false
-    m.startAt = 0
     m.devLogged = false
-    m.provTimer = CreateObject("roSGNode", "Timer")
-    m.provTimer.duration = 25
-    m.provTimer.observeField("fire", "onProvStall")
-    m.hintTimer = CreateObject("roSGNode", "Timer")
-    m.hintTimer.duration = 9
-    m.hintTimer.observeField("fire", "onHintDone")
-    ' v1.0.11: no audio tracks reported -> try the provider's HLS of the SAME item once (after a short wait)
-    m.noTrkTimer = CreateObject("roSGNode", "Timer")
-    m.noTrkTimer.duration = 3
-    m.noTrkTimer.observeField("fire", "onNoTracks")
-    m.swapping = false        ' between switching a stream (HLS try / back to the file) and the new one playing
     m.lastPosSeen = 0
-    m.noTrkMenu = false
-    m.provItem = invalid
-    m.audioBad = false        ' this device said it can't play the current stream's audio
 end sub
 
 sub onReq()
@@ -85,13 +62,7 @@ sub onReq_impl()
         tune(m.idx)
     else
         m.live = false
-        m.provTried = false
-        m.provActive = false
-        m.swapping = false
         m.lastPosSeen = 0
-        m.noTrkMenu = false
-        m.provItem = invalid
-        m.startAt = 0
         startVod()
     end if
 end sub
@@ -106,14 +77,9 @@ sub startVod()
     cn.title = toS(r.title)
     m.offset = toI(r.offset)
     st = toI(r.start)
-    if m.startAt > 0 then
-        st = m.startAt                 ' back from the provider-HLS attempt: same spot
-        m.startAt = 0
-    end if
     if st > 0 and m.offset = 0 then cn.PlayStart = st
     print "[KTV] play start kind=" + toS(r.kind) + " id=" + toS(r.id) + " ext=" + toS(r.ext) + " fmt=" + fmt + " start=" + st.ToStr() + " viaPc=" + toS(r.viaPc) + " vcodec=" + toS(r.vcodec) + " acodec=" + toS(r.acodec) + " url=<hidden>"
     m.audioDone = false
-    m.userPicked = false
     m.tracks = []
     m.video.enableUI = true
     m.video.content = cn
@@ -174,9 +140,7 @@ sub playLive(fmt as string)
     ext = "m3u8"
     if fmt = "ts" then ext = "ts"
     m.fmt = fmt
-    m.audioBad = false
     m.audioDone = false
-    m.userPicked = false
     m.tracks = []
     id = toS(ch.xid)
     print "[KTV] live play ch='" + toS(ch.title) + "' id=" + id + " (" + (m.idx + 1).ToStr() + "/" + m.list.Count().ToStr() + " in '" + toS(m.label) + "') fmt=" + fmt + " ext=" + ext + " try=" + (m.try + 1).ToStr() + " url=<server>/live/<user>/<pass>/" + id + "." + ext
@@ -295,11 +259,6 @@ sub handleState(st as dynamic)
         liveFail(videoErrText())
         return
     end if
-    if st = "error" and m.provActive then
-        logVideoError()
-        provRevert(videoErrText())
-        return
-    end if
     if st = "error" then
         logVideoError()
         if not m.retried then
@@ -326,14 +285,8 @@ sub handleState(st as dynamic)
             end if
         end if
     else if st = "playing" then
-        m.swapping = false
         m.msg.visible = false
         if m.live then liveOk()
-        if m.provActive then
-            m.provActive = false
-            m.provTimer.control = "stop"
-            print "[KTV] audio: provider HLS version is playing"
-        end if
         if not m.audioDone then
             m.audioDone = true
             checkAudio(m.video.availableAudioTracks)
@@ -341,21 +294,11 @@ sub handleState(st as dynamic)
         print "[player] playing  video=" + toS(m.video.videoFormat) + " audio=" + toS(m.video.audioFormat)
     else if st = "finished" then
         if not m.live then
-            ' v1.0.11 (Premiere bug): a stream we just swapped (provider HLS try, or back to the file) can report
-            ' "finished" at once. That is NOT the episode ending: never mark it watched or start the next one.
-            if m.provActive then
-                provRevert("the HLS version ended right away")
-                return
-            end if
-            if m.swapping then
-                print "[KTV] player: 'finished' while switching streams ignored (no auto-next)"
-                return
-            end if
             dur = toI(m.video.duration)
             lp = Int(m.lastPosSeen)
             if toS(m.top.req.viaPc) <> "true" and m.offset = 0 and dur > 300 and lp < dur * 0.9 then
                 print "[KTV] player: ended early at " + lp.ToStr() + "s of " + dur.ToStr() + "s -> not marked watched, no auto-next"
-                m.msg.text = "This stopped early (" + fmtTime(lp) + " of " + fmtTime(dur) + "). Press Back and play it again to resume, or ▲ for audio options."
+                m.msg.text = "This stopped early (" + fmtTime(lp) + " of " + fmtTime(dur) + "). Press Back and play it again to resume."
                 m.msg.visible = true
                 return
             end if
@@ -380,17 +323,13 @@ function stopAndSave(a = invalid as dynamic) as boolean
     m.tuneTimer.control = "stop"
     m.retryTimer.control = "stop"
     m.stallTimer.control = "stop"
-    m.noTrkTimer.control = "stop"
-    m.provTimer.control = "stop"
     m.video.control = "stop"
     m.video.content = invalid
     return true
 end function
 
 function takeFocus(a = invalid as dynamic) as boolean
-    if m.aPanel.visible then
-        m.aList.setFocus(true)
-    else if m.live then
+    if m.live then
         m.top.setFocus(true)
     else
         m.video.setFocus(true)
@@ -400,10 +339,6 @@ end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-    if m.aPanel.visible and (key = "back" or key = "left") then
-        closeAudio()
-        return true
-    end if
     if m.live then
         if key = "up" or key = "channelup" then
             switchChannel(1)
@@ -416,18 +351,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     end if
-    if not m.live and (key = "up" or key = "down") and not m.aPanel.visible then
-        openAudio()                      ' * goes to Roku's own overlay while the video has focus
-        return true
-    end if
-    if key = "options" then
-        if m.aPanel.visible then
-            closeAudio()
-        else if m.live and m.tracks.Count() < 2 and not m.audioBad then
-            showBanner(m.idx, "")
-        else
-            openAudio()
-        end if
+    if key = "options" and m.live then
+        showBanner(m.idx, "")
         return true
     end if
     return false
@@ -465,10 +390,8 @@ sub logVideoError()
 end sub
 
 ' ---------------------------------------------------------------- audio tracks
-' Device-agnostic: never trust a fixed list of codec names. Roku TVs decode AAC/MP3/AC3/EAC3; HDMI players
-' (e.g. Premiere 3920X) decode AAC/MP3 only and can merely pass AC3/EAC3/DTS on to a TV or soundbar that
-' accepts them. Whatever this device reports it can't handle (CanDecodeAudio false) counts as "can't play":
-' another track is picked, then the provider's HLS version, then the PC. Unknown/empty codec = playable.
+' v1.0.14: silent. When a file has several audio tracks, pick one this device can play (English, AAC preferred)
+' and log what happened. No on-screen messages, no menu, and never another request to the provider.
 
 ' raw Format/Name text from availableAudioTracks or Video.audioFormat -> aac|mp3|ac3|eac3|dts|truehd|... or ""
 function normCodec(raw as dynamic) as string
@@ -531,27 +454,10 @@ function decodeState(codec as string) as string
     return st
 end function
 
-function canDecode(codec as string) as boolean
-    return decodeState(codec) <> "no"
-end function
-
 function isEnglish(t as object) as boolean
     l = LCase(toS(t.Language))
     n = LCase(toS(t.Name))
     return (l = "eng" or l = "en" or l = "english" or Instr(1, n, "english") > 0)
-end function
-
-function trackLabel(t as object) as string
-    parts = []
-    l = toS(t.Language)
-    if l <> "" then parts.Push(UCase(l))
-    n = toS(t.Name)
-    if n <> "" and LCase(n) <> LCase(l) then parts.Push(n)
-    c = trackCodec(t)
-    if c <> "" and Instr(1, LCase(n), c) = 0 then parts.Push(UCase(c))
-    if decodeState(c) = "no" then parts.Push("(needs a receiver)")
-    if parts.Count() = 0 then parts.Push("Track " + toS(t.Track))
-    return parts.Join(" · ")
 end function
 
 sub checkAudio(tracks as dynamic)
@@ -559,42 +465,14 @@ sub checkAudio(tracks as dynamic)
     m.tracks = []
     if type(tracks) = "roArray" then m.tracks = tracks
     cur = toS(m.video.audioTrack)
-    fmtRaw = toS(m.video.audioFormat)
-    if m.tracks.Count() > 0 then m.noTrkTimer.control = "stop"
-    if m.tracks.Count() = 0 and noAudioFormat() and not m.live then
-        if provEligible() then
-            print "[KTV] audio: no audio tracks reported, checking again in 3 s (then the provider's HLS of this same item)"
-            m.noTrkTimer.control = "stop"
-            m.noTrkTimer.control = "start"
-            return
-        else if not m.noTrkMenu and m.provTried and not m.provActive then
-            m.noTrkMenu = true
-            ' v1.0.13: a Roku player on stereo output hides Dolby/DTS tracks completely (audio=none, 0 tracks).
-            ' The provider's own listing says what the sound really is.
-            pc = normCodec(m.top.req.acodec)
-            print "[KTV] audio: still no audio tracks after the HLS try -> audio menu (provider says acodec=" + toS(m.top.req.acodec) + ", output=" + toS(CreateObject("roDeviceInfo").GetAudioOutputChannel()) + ")"
-            if pc = "ac3" or pc = "eac3" or pc = "dts" or pc = "truehd" then
-                showHint("The sound is " + UCase(pc) + ", which this Roku can only pass to the TV, and its audio output is set to stereo.")
-                openAudio()
-                m.aHead.text = "NO SOUND:  " + UCase(pc)
-            else
-                showHint("This Roku found no sound it can play in this file (likely Dolby or DTS).")
-                openAudio()
-                m.aHead.text = "NO AUDIO TRACKS"
-            end if
-            m.aTip.visible = true
-            return
-        end if
-    end if
-    print "[KTV] audio: " + m.tracks.Count().ToStr() + " track(s), selected=" + cur + " playing=" + toS(m.video.currentAudioTrack) + " audioFormat=" + fmtRaw + " live=" + toS(m.live)
+    print "[KTV] audio: " + m.tracks.Count().ToStr() + " track(s), selected=" + cur + " audioFormat=" + toS(m.video.audioFormat) + " acodec(provider)=" + toS(m.top.req.acodec) + " live=" + toS(m.live)
+    if m.tracks.Count() < 2 then return
     best = invalid
     bestScore = -999
-    allNo = (m.tracks.Count() > 0)
     for i = 0 to m.tracks.Count() - 1
         t = m.tracks[i]
         c = trackCodec(t)
         ds = decodeState(c)
-        if ds <> "no" then allNo = false
         n = LCase(toS(t.Name))
         sc = 0
         if ds = "yes" then sc = sc + 20
@@ -604,231 +482,23 @@ sub checkAudio(tracks as dynamic)
         if Instr(1, n, "stereo") > 0 or Instr(1, n, "2.0") > 0 then sc = sc + 2
         if Instr(1, n, "commentary") > 0 or Instr(1, n, "description") > 0 then sc = sc - 15
         if toS(t.Track) = cur then sc = sc + 1          ' ties keep the file's default
-        raw = []
-        for each k in t
-            raw.Push(k + "=" + toS(t[k]))
-        end for
-        print "[KTV] audio track " + i.ToStr() + ": {" + raw.Join(", ") + "} codec=" + c + " decode=" + ds + " score=" + sc.ToStr()
+        print "[KTV] audio track " + i.ToStr() + ": lang=" + toS(t.Language) + " name=" + toS(t.Name) + " codec=" + c + " decode=" + ds + " score=" + sc.ToStr()
         if sc > bestScore then
             bestScore = sc
             best = t
         end if
     end for
-    ' only switch when it clearly helps (a playable/English track beats the file's default)
-    if best <> invalid and toS(best.Track) <> "" and toS(best.Track) <> cur and cur <> "" then
-        print "[KTV] audio: switching to track " + toS(best.Track) + " (" + trackLabel(best) + ")"
-        m.video.audioTrack = toS(best.Track)
-    else if best <> invalid and cur = "" and m.tracks.Count() > 1 then
-        print "[KTV] audio: switching to track " + toS(best.Track) + " (" + trackLabel(best) + ")"
+    if best <> invalid and toS(best.Track) <> "" and toS(best.Track) <> cur then
+        print "[KTV] audio: switching to track " + toS(best.Track)
         m.video.audioTrack = toS(best.Track)
     end if
-    ' "can't play" only when the device said no for every track, or for the playing format, and it's a known DTS/TrueHD
-    m.audioBad = false
-    fc = normCodec(fmtRaw)
-    bad = allNo
-    if m.tracks.Count() = 0 and fc <> "" and decodeState(fc) = "no" then bad = true
-    if not bad then
-        print "[KTV] audio: ok (playing as-is)"
-        return
-    end if
-    what = UCase(fc)
-    if what = "" and m.tracks.Count() > 0 then what = UCase(trackCodec(m.tracks[0]))
-    print "[KTV] audio: this device can't play any track (" + what + ")"
-    if not m.live and toS(m.top.req.viaPc) <> "true" and not m.provTried and LCase(toS(m.top.req.fmt)) <> "hls" then
-        provHls()
-        return
-    end if
-    hint = "This device can't play this audio"
-    if what <> "" then hint = hint + " (" + what + ")"
-    if fcIsDolby(what) then hint = "This Roku can't decode Dolby audio (" + what + ") and the TV isn't accepting it"
-    m.audioBad = true
-    if m.live then
-        ' live: don't cover the picture on every channel change, just say it (the * button opens the tips)
-        showHint(hint + ". Press * for options.")
-        return
-    end if
-    showHint(hint + ".")
-    openAudio()
-    m.aHead.text = "NO SOUND?  " + what
-    if fcIsDolby(what) then m.aTip.visible = true      ' the fix is usually the Roku audio setting: show it right away
 end sub
 
-' ---- provider's own HLS version of a movie/episode (Xtream servers often remux it, sometimes with AAC audio)
-sub provHls()
-    r = m.top.req
-    if toS(r.id) = "" then return
-    ' the exact item on screen (this episode / movie), never the next one in the queue
-    m.provItem = {kind: toS(r.kind), id: toS(r.id), ext: toS(r.ext), title: toS(r.title)}
-    m.swapping = true
-    m.noTrkTimer.control = "stop"
-    m.provTried = true
-    m.provActive = true
-    m.provFrom = Int(m.video.position)
-    if m.provFrom <= 0 then m.provFrom = Int(m.lastPosSeen)       ' stream already stopped: last known spot
-    if m.provFrom <= 0 then m.provFrom = toI(r.start)             ' never got going: where this play started
-    m.startAt = 0
-    kind = m.provItem.kind
-    id = m.provItem.id
-    print "[KTV] audio: trying the provider's HLS version kind=" + kind + " id=" + id + " at " + m.provFrom.ToStr() + "s url=<server>/" + kind + "/<user>/<pass>/" + id + ".m3u8"
-    showHint("Trying a version of this with TV-friendly audio…")
-    cn = CreateObject("roSGNode", "ContentNode")
-    cn.url = streamUrl(m.cfg, kind, id, "m3u8")
-    cn.StreamFormat = "hls"
-    cn.title = m.provItem.title
-    if m.provFrom > 0 then cn.PlayStart = m.provFrom
-    m.audioDone = false
-    m.tracks = []
-    m.video.control = "stop"
-    m.video.content = cn
-    m.video.control = "play"
-    m.video.setFocus(true)
-    m.provTimer.control = "stop"
-    m.provTimer.control = "start"
-end sub
-
-function fcIsDolby(what as string) as boolean
-    w = LCase(what)
-    return (w = "ac3" or w = "eac3")
-end function
-
-function noAudioFormat() as boolean
-    f = LCase(toS(m.video.audioFormat))
-    return (f = "" or f = "none")
-end function
-
-function provEligible() as boolean
-    if m.live or m.provTried or m.provActive then return false
-    r = m.top.req
-    if type(r) <> "roAssociativeArray" then return false
-    return toS(r.viaPc) <> "true" and LCase(toS(r.fmt)) <> "hls" and toS(r.id) <> ""
-end function
-
-sub onNoTracks()
-    if m.live or m.userPicked then return
-    t = m.video.availableAudioTracks
-    if type(t) = "roArray" and t.Count() > 0 then
-        checkAudio(t)
-        return
-    end if
-    if provEligible() and noAudioFormat() then
-        print "[KTV] audio: still no audio tracks -> provider HLS of the same item id=" + toS(m.top.req.id)
-        provHls()
-    end if
-end sub
-
-sub onProvStall()
-    if not m.provActive then return
-    if toS(m.video.state) = "playing" then return
-    provRevert("no picture after 25 s, state " + toS(m.video.state))
-end sub
-
-' the provider has no HLS version: back to the original file at the same spot, then offer the options
-sub provRevert(why as string)
-    m.provActive = false
-    m.provTimer.control = "stop"
-    print "[KTV] audio: provider HLS version failed: " + why + " -> back to the original file"
-    m.startAt = m.provFrom
-    m.retried = true                 ' no second blind retry of the original
-    m.swapping = true
-    print "[KTV] audio: back to the original file id=" + toS(m.top.req.id) + " ext=" + toS(m.top.req.ext) + " at " + m.provFrom.ToStr() + "s"
-    startVod()
-end sub
-
-' some streams list their tracks a moment after "playing": check again once, unless the viewer chose one
+' some streams list their tracks a moment after "playing": check again once
 sub onTracks()
     t = m.video.availableAudioTracks
-    if not m.audioDone or m.userPicked or type(t) <> "roArray" then return
+    if not m.audioDone or type(t) <> "roArray" then return
     if t.Count() <> m.tracks.Count() then checkAudio(t)
-end sub
-
-sub showHint(t as string)
-    m.msg.text = t
-    m.msg.visible = true
-    m.hintTimer.control = "stop"
-    m.hintTimer.control = "start"
-end sub
-
-sub onHintDone()
-    m.msg.visible = false
-end sub
-
-sub openAudio()
-    ' nothing reported at all and HLS not tried yet: try it for this same item first (once)
-    if m.tracks.Count() = 0 and noAudioFormat() and provEligible() then
-        print "[KTV] audio: menu asked with no tracks -> provider HLS of the same item first"
-        provHls()
-        return
-    end if
-    m.aItems = []
-    m.aHead.text = "AUDIO"
-    m.aTip.visible = false
-    cn = CreateObject("roSGNode", "ContentNode")
-    cur = toS(m.video.audioTrack)
-    for each t in m.tracks
-        it = cn.createChild("ContentNode")
-        mark = "   "
-        if toS(t.Track) = cur then mark = "✓  "
-        it.title = mark + trackLabel(t)
-        m.aItems.Push({act: "track", id: toS(t.Track)})
-    end for
-    if m.tracks.Count() = 0 then
-        it = cn.createChild("ContentNode")
-        f = UCase(toS(m.video.audioFormat))
-        if f = "" then f = "unknown format"
-        it.title = "   This file's audio (" + f + ")"
-        m.aItems.Push({act: "none"})
-    end if
-    if not m.live then
-        r = m.top.req
-        if toS(r.viaPc) <> "true" then
-            if LCase(toS(r.fmt)) <> "hls" then
-                it = cn.createChild("ContentNode")
-                it.title = "   Try the provider's HLS version"
-                m.aItems.Push({act: "prov"})
-            end if
-            it = cn.createChild("ContentNode")
-            it.title = "   Play through the PC instead"
-            m.aItems.Push({act: "pc"})
-        end if
-    end if
-    it = cn.createChild("ContentNode")
-    it.title = "   No sound? Soundbar tips"
-    m.aItems.Push({act: "tip"})
-    it = cn.createChild("ContentNode")
-    it.title = "   Close"
-    m.aItems.Push({act: "close"})
-    m.aList.content = cn
-    m.aPanel.visible = true
-    m.aList.setFocus(true)
-    print "[KTV] audio menu open (" + m.tracks.Count().ToStr() + " tracks, " + m.aItems.Count().ToStr() + " items)"
-end sub
-
-sub closeAudio()
-    m.aPanel.visible = false
-    takeFocus()
-end sub
-
-sub onAudioPick()
-    i = m.aList.itemSelected
-    if i < 0 or i >= m.aItems.Count() then return
-    a = m.aItems[i]
-    print "[KTV] audio menu choice: " + a.act
-    if a.act = "tip" then
-        m.aTip.visible = true            ' stays open so it can be read
-        return
-    end if
-    closeAudio()
-    if a.act = "track" then
-        print "[KTV] audio: picked track " + a.id
-        m.userPicked = true
-        m.video.audioTrack = a.id
-    else if a.act = "prov" then
-        m.provTried = false
-        provHls()
-    else if a.act = "pc" then
-        print "[KTV] audio: play through the PC"
-        m.top.needPc = {why: "the audio in this file can't be played by this device", keep: true, pos: Int(m.offset + m.video.position)}
-    end if
 end sub
 
 ' once per player: what this TV says about audio (so the TV log shows the exact setup)

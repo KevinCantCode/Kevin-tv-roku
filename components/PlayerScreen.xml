@@ -25,16 +25,6 @@
       <Label id="bN" translation="[30,48]" width="740" height="50" font="font:MediumBoldSystemFont"/>
       <Label id="bNow" translation="[30,102]" width="740" font="font:SmallSystemFont" color="0xD6D6E2FF"/>
     </Group>
-    <Group id="aPanel" translation="[1260,0]" visible="false">
-      <Rectangle width="660" height="1080" color="0x0B0B10EE"/>
-      <Rectangle width="6" height="1080" color="0x7C5CFFFF"/>
-      <Label id="aHead" text="AUDIO" translation="[48,90]" width="580" font="font:SmallestBoldSystemFont" color="0xA8A8BCFF"/>
-      <LabelList id="aList" translation="[36,140]" itemSize="[588,64]" numRows="12" vertFocusAnimationStyle="floatingFocus"
-          focusBitmapUri="pkg:/images/pill.9.png" color="0xD6D6E2FF" focusedColor="0x0B0B10FF" font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
-      <Label id="aTip" translation="[48,640]" width="570" height="360" wrap="true" maxLines="11" visible="false" font="font:SmallestSystemFont" color="0xD6D6E2FF"
-          text="Roku players (Premiere, Express, Stick) don't decode Dolby or DTS themselves: they hand it to the TV or soundbar. On the Roku: Settings › Audio › HDMI (or Digital output format) → Auto detect, and Audio mode → Auto. If the TV still stays silent it can't take Dolby: pick an AAC track above, or Play through the PC, which converts the sound. (Menu names vary by model.)"/>
-      <Label text="OK: choose  ·  Back: close" translation="[48,980]" width="580" font="font:SmallestSystemFont" color="0x8A8AA0FF"/>
-    </Group>
     <Label id="msg" translation="[160,880]" width="1600" horizAlign="center" wrap="true" font="font:MediumSystemFont" visible="false"/>
     <Timer id="tuneTimer" duration="0.7" repeat="false"/>
     <Timer id="bannerTimer" duration="4" repeat="false"/>

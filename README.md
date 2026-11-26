@@ -20,9 +20,10 @@ Roku **TVs** decode Dolby Digital (AC3 / EAC3) themselves. Roku **players** such
 they decode AAC and MP3 and only *pass through* Dolby and DTS to the TV or soundbar. If the TV does not accept
 Dolby, or the Roku's audio setting is forced to Stereo, those streams play with a picture and no sound.
 
-What the app does (since 1.0.12): it asks the device whether it can play each audio format. If it can't, it
-switches to a playable track (AAC) when the file has one, then tries the provider's HLS version, and
-otherwise shows the audio menu with "Play through the PC" (the PC helper converts the sound to AAC).
+What the app does (since 1.0.14): when a file has several audio tracks it quietly picks one this device can
+play (AAC preferred). It shows no audio messages and never makes extra requests to the provider. A file whose
+only audio track is Dolby Digital Plus or DTS plays without sound on a Roku player when the TV won't accept that
+format (for example the LG UK6190 tested here).
 
 What to check on the Roku: Settings › Audio › HDMI (or "Digital output format") → Auto detect, and
 Audio mode → Auto.
