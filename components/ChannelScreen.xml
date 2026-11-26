@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Guide page for a live channel: now / next from the provider's EPG, Watch button -->
+<component name="ChannelScreen" extends="Group">
+  <interface>
+    <field id="content" type="node" onChange="onContent"/>
+    <field id="cfg" type="assocarray"/>
+    <field id="watch" type="boolean" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/ChannelScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Rectangle translation="[96,96]" width="400" height="240" color="0x1C1C28FF"/>
+    <Label id="logoName" translation="[112,96]" width="368" height="240" wrap="true" maxLines="3" horizAlign="center" vertAlign="center" font="font:MediumBoldSystemFont" color="0xF0F0F6FF"/>
+    <Poster id="logo" translation="[126,121]" width="340" height="190" loadWidth="340" loadHeight="190" loadDisplayMode="scaleToFit"/>
+    <Poster translation="[96,96]" width="400" height="240" uri="pkg:/images/corners.9.png"/>
+    <Group translation="[548,104]">
+      <Label id="name" width="1276" height="64" font="font:LargeBoldSystemFont"/>
+      <Label id="grp" translation="[0,74]" width="1276" font="font:SmallSystemFont" color="0xA8A8BCFF"/>
+      <ButtonGroup id="buttons" translation="[0,140]" layoutDirection="horiz" minWidth="280"/>
+    </Group>
+    <Rectangle translation="[96,384]" width="1728" height="1" color="0x1E1E2AFF"/>
+    <Label id="nowK" translation="[96,412]" text="ON NOW" font="font:SmallestBoldSystemFont" color="0xFF6B70FF"/>
+    <Label id="nowT" translation="[96,450]" width="1728" height="50" font="font:MediumBoldSystemFont"/>
+    <Label id="nowD" translation="[96,506]" width="1500" height="110" wrap="true" maxLines="3" lineSpacing="2" font="font:SmallSystemFont" color="0xD6D6E2FF"/>
+    <Label translation="[96,640]" text="COMING UP" font="font:SmallestBoldSystemFont" color="0x8A8AA0FF"/>
+    <LabelList id="sched" translation="[96,680]" itemSize="[1728,56]" numRows="6" color="0xD6D6E2FF" font="font:SmallSystemFont"
+               focusBitmapUri="pkg:/images/pill.9.png" focusedColor="0x0B0B10FF"/>
+  </children>
+</component>

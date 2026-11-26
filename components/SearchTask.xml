@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-lived worker: loads pkg:/data/search.json once, then answers search / key-lookup requests
+     off the render thread. Results come back as a ready ContentNode tree. Never touches the network. -->
+<component name="SearchTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray"/>
+    <field id="respInfo" type="assocarray"/>
+    <field id="respId" type="integer" value="0" alwaysNotify="true"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/SearchTask.brs"/>
+</component>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- First-run / Settings: service address + login (stored only in this TV's registry), PC address, metadata URL -->
+<component name="SettingsScreen" extends="Group">
+  <interface>
+    <field id="saved" type="boolean" alwaysNotify="true"/>
+    <field id="firstRun" type="boolean" value="false" onChange="onFirstRun"/>
+    <function name="takeFocus"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/SettingsScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Label id="head" translation="[160,90]" text="Settings" font="font:LargeBoldSystemFont"/>
+    <Label id="intro" translation="[160,170]" width="1600" wrap="true" font="font:SmallSystemFont" color="0xA8A8BCFF"
+           text="Enter your TV service's address and login. They are saved only on this TV. Tip: you can paste your full M3U link into Server and the username and password are filled in for you. The Roku mobile app's keyboard makes typing easier."/>
+    <LabelList id="list" translation="[160,300]" itemSize="[1600,72]" numRows="8" vertFocusAnimationStyle="floatingFocus"
+               focusBitmapUri="pkg:/images/pill.9.png" focusedColor="0x0B0B10FF" color="0xF0F0F6FF"
+               font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
+    <Label id="status" translation="[160,900]" width="1600" wrap="true" font="font:SmallSystemFont" color="0x8A8AA0FF"/>
+  </children>
+</component>

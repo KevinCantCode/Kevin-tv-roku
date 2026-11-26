@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Row / grid tile: rounded poster (2:3) for movies and shows, logo card for channels, rank for Top 10,
+     a "See all" card at the end of rows. Posters are decoded at tile size (loadWidth/loadHeight). -->
+<component name="PosterItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent"/>
+    <field id="width" type="float" onChange="onSize"/>
+    <field id="height" type="float" onChange="onSize"/>
+    <field id="focusPercent" type="float"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/PosterItem.brs"/>
+  <children>
+    <Label id="rank" color="0xFFFFFFD0" horizAlign="right" vertAlign="bottom">
+      <Font role="font" uri="font:BoldSystemFontFile" size="150"/>
+    </Label>
+    <Rectangle id="bg" color="0x1C1C28FF"/>
+    <Poster id="poster" loadDisplayMode="scaleToZoom" loadingBitmapUri="pkg:/images/poster_ph.png" failedBitmapUri="pkg:/images/poster_ph.png"/>
+    <Label id="title" font="font:SmallBoldSystemFont" color="0xF0F0F6FF" wrap="true" maxLines="3" horizAlign="center" vertAlign="center"/>
+    <Label id="sub" font="font:SmallestSystemFont" color="0xA8A8BCFF" horizAlign="center"/>
+    <Rectangle id="ptrack" color="0x00000099" height="6" visible="false"/>
+    <Rectangle id="pbar" color="0xE50914FF" height="6" visible="false"/>
+    <Poster id="corners" uri="pkg:/images/corners.9.png"/>
+    <!-- News: type or city tag on the channel card -->
+    <Rectangle id="tagBg" color="0x7C5CFFE6" height="30" visible="false"/>
+    <Label id="tag" font="font:SmallestBoldSystemFont" color="0xFFFFFFFF" height="30" vertAlign="center" horizAlign="center" visible="false"/>
+  </children>
+</component>

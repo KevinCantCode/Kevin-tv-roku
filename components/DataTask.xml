@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-lived data worker (replaces MetaTask): loads the lists, builds every page's ContentNode tree,
+     Continue Watching and See-all grids OFF the render thread, and prefetches the main pages.
+     Request: {id, op: "page", page} | {id, op: "continue"} | {id, op: "grid", keys}. Unsolicited prefetches use id 0. -->
+<component name="DataTask" extends="Task">
+  <interface>
+    <field id="metaurl" type="string"/>
+    <field id="request" type="assocarray"/>
+    <!-- one field per answer ({id, op, page, src, generated, content}) so back-to-back answers never mix -->
+    <field id="response" type="assocarray" alwaysNotify="true"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/DataTask.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/NewsPages.brs"/>
+</component>

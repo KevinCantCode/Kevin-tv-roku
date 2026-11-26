@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Side menu + hero + rows. One screen reused for Home, Live TV, News, Movies, TV Shows, Chinese.
+     Rows arrive as finished ContentNode trees from DataTask; this screen only lays them out. -->
+<component name="HomeScreen" extends="Group">
+  <interface>
+    <field id="rowSizes" type="array" onChange="onSizes"/>
+    <field id="rows" type="node" onChange="onRows"/>
+    <field id="layoutKind" type="string" value="poster"/>
+    <field id="pageTitle" type="string"/>
+    <field id="navPage" type="string" onChange="onNavPageSet"/>
+    <field id="page" type="string" alwaysNotify="true"/>
+    <field id="selected" type="assocarray" alwaysNotify="true"/>
+    <field id="status" type="string" onChange="onStatus"/>
+    <field id="profileName" type="string" onChange="onProfileName"/>
+    <field id="keepFocus" type="boolean" value="false"/>
+    <!-- News sub-pages (a city, a type): Back returns to the page they were opened from, same tile -->
+    <field id="canBack" type="boolean" value="false"/>
+    <field id="backReq" type="boolean" alwaysNotify="true"/>
+    <field id="restorePos" type="assocarray"/>
+    <function name="getPos"/>
+    <function name="takeFocus"/>
+    <function name="focusMenu"/>
+    <function name="showLoading"/>
+    <function name="rowsAdded"/>
+    <function name="rowShift"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/HomeScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <!-- side menu -->
+    <Rectangle width="264" height="1080" color="0x101018FF"/>
+    <Rectangle translation="[263,0]" width="1" height="1080" color="0x1E1E2AFF"/>
+    <Group translation="[36,44]">
+      <Rectangle width="52" height="52" color="0x7C5CFFFF"/>
+      <Label text="K" width="52" height="52" horizAlign="center" vertAlign="center" font="font:MediumBoldSystemFont"/>
+      <Label text="Kevin TV" translation="[68,9]" font="font:MediumBoldSystemFont"/>
+      <Label id="profLbl" translation="[0,64]" width="200" font="font:SmallestSystemFont" color="0x8A8AA0FF"/>
+    </Group>
+    <Rectangle id="navMark" translation="[14,170]" width="5" height="32" color="0x7C5CFFFF"/>
+    <LabelList id="nav" translation="[26,154]" itemSize="[218,64]" numRows="10" vertFocusAnimationStyle="floatingFocus"
+               color="0xA8A8BCFF" focusedColor="0x0B0B10FF" focusBitmapUri="pkg:/images/pill.9.png"
+               font="font:SmallBoldSystemFont" focusedFont="font:SmallBoldSystemFont">
+      <ContentNode role="content">
+        <ContentNode title="   Home"/>
+        <ContentNode title="   Search"/>
+        <ContentNode title="   Live TV"/>
+        <ContentNode title="   News"/>
+        <ContentNode title="   Movies"/>
+        <ContentNode title="   TV Shows"/>
+        <ContentNode title="   Chinese"/>
+        <ContentNode title="   Settings"/>
+        <ContentNode title="   Profiles"/>
+      </ContentNode>
+    </LabelList>
+    <Label id="statusLbl" translation="[30,1010]" width="220" wrap="true" maxLines="2" font="font:SmallestSystemFont" color="0x5E5E72FF"/>
+    <!-- hero -->
+    <Group id="hero" translation="[312,44]">
+      <Label id="heroTitle" width="1500" height="60" font="font:LargeBoldSystemFont" color="0xFFFFFFFF"/>
+      <Label id="heroMeta" translation="[0,64]" width="1500" font="font:SmallSystemFont" color="0xA8A8BCFF"/>
+      <Label id="heroBadge" translation="[0,104]" width="1500" font="font:SmallBoldSystemFont" color="0xFF6B70FF"/>
+      <Label id="heroPlot" translation="[0,110]" width="1120" height="68" wrap="true" maxLines="2" lineSpacing="2"
+             font="font:SmallSystemFont" color="0xD6D6E2FF"/>
+    </Group>
+    <RowList id="rows" translation="[312,276]" itemComponentName="PosterItem" numRows="2"
+             itemSize="[1608,392]" rowItemSize="[[190,285]]" rowItemSpacing="[[20,0]]" itemSpacing="[0,22]"
+             showRowLabel="[true]" rowLabelOffset="[[0,12]]" rowLabelFont="font:SmallBoldSystemFont" rowLabelColor="0xE6E6EEFF"
+             focusXOffset="[0]" rowFocusAnimationStyle="floatingFocus" vertFocusAnimationStyle="floatingFocus"
+             drawFocusFeedback="true" drawFocusFeedbackOnTop="true" focusBitmapUri="pkg:/images/focus_ring.9.png"/>
+    <Group id="busy" translation="[312,560]" visible="false">
+      <BusySpinner id="spin" translation="[772,0]" spinInterval="0.9"/>
+      <Label id="busyLbl" translation="[0,90]" width="1608" horizAlign="center" font="font:SmallSystemFont" color="0x8A8AA0FF"/>
+    </Group>
+    <Label id="empty" translation="[312,560]" width="1608" horizAlign="center" font="font:MediumSystemFont" color="0x8A8AA0FF" visible="false"/>
+    <Timer id="heroTimer" duration="0.12" repeat="false"/>
+  </children>
+</component>

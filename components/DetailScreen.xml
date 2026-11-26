@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Info page for a movie or a show: synopsis, Play / Resume, seasons and episodes. Never auto-plays. -->
+<component name="DetailScreen" extends="Group">
+  <interface>
+    <field id="content" type="node" onChange="onContent"/>
+    <field id="cfg" type="assocarray"/>
+    <field id="playReq" type="assocarray" alwaysNotify="true"/>
+    <field id="closeMe" type="boolean" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+    <function name="refresh"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/DetailScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <!-- backdrop only when the title has a real one (no blown-up poster); faded into the page on the left and bottom -->
+    <Group id="bdGroup" visible="false">
+      <Poster id="backdrop" translation="[620,0]" width="1300" height="731" loadWidth="1300" loadHeight="731" loadDisplayMode="scaleToZoom" opacity="0.42"/>
+      <Poster translation="[620,0]" width="520" height="731" uri="pkg:/images/fade_h.png"/>
+      <Poster translation="[620,431]" width="1300" height="300" uri="pkg:/images/fade_v.png"/>
+    </Group>
+    <Rectangle translation="[96,96]" width="300" height="450" color="0x1C1C28FF"/>
+    <Poster id="poster" translation="[96,96]" width="300" height="450" loadWidth="300" loadHeight="450" loadDisplayMode="scaleToZoom"
+            loadingBitmapUri="pkg:/images/poster_ph.png" failedBitmapUri="pkg:/images/poster_ph.png"/>
+    <Poster translation="[96,96]" width="300" height="450" uri="pkg:/images/corners.9.png"/>
+    <Group translation="[448,96]">
+      <Label id="title" width="1376" height="64" font="font:LargeBoldSystemFont"/>
+      <Label id="meta" translation="[0,76]" width="1376" font="font:SmallSystemFont" color="0xA8A8BCFF"/>
+      <Label id="badge" translation="[0,114]" width="1376" font="font:SmallBoldSystemFont" color="0xFF6B70FF"/>
+      <Label id="plot" translation="[0,154]" width="1080" height="148" wrap="true" maxLines="4" lineSpacing="2" font="font:SmallSystemFont" color="0xD6D6E2FF"/>
+      <Label id="fmt" translation="[0,318]" width="1376" font="font:SmallestSystemFont" color="0x8A8AA0FF"/>
+      <ButtonGroup id="buttons" translation="[0,362]" layoutDirection="horiz" itemSpacings="[20]" minWidth="280"/>
+    </Group>
+    <Group id="eps" translation="[96,600]" visible="false">
+      <Label text="SEASONS" font="font:SmallestBoldSystemFont" color="0x8A8AA0FF"/>
+      <LabelList id="seasons" translation="[0,40]" itemSize="[300,56]" numRows="7" vertFocusAnimationStyle="floatingFocus"
+                 focusBitmapUri="pkg:/images/pill.9.png" focusedColor="0x0B0B10FF" color="0xD6D6E2FF"
+                 font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
+      <Label id="epHead" translation="[352,0]" text="EPISODES" font="font:SmallestBoldSystemFont" color="0x8A8AA0FF"/>
+      <LabelList id="episodes" translation="[352,40]" itemSize="[1376,56]" numRows="7" vertFocusAnimationStyle="floatingFocus"
+                 focusBitmapUri="pkg:/images/pill.9.png" focusedColor="0x0B0B10FF" color="0xF0F0F6FF"
+                 font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
+    </Group>
+    <BusySpinner id="spin" translation="[96,650]" spinInterval="0.9" visible="false"/>
+    <Label id="loading" translation="[96,640]" width="1600" wrap="true" maxLines="2" text="" font="font:SmallSystemFont" color="0xA8A8BCFF"/>
+  </children>
+</component>

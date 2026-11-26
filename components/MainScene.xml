@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component name="MainScene" extends="Scene">
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Group id="screens"/>
+    <BusySpinner id="spinner" translation="[928,470]" spinInterval="0.9"/>
+    <Label id="loading" translation="[0,570]" width="1920" horizAlign="center" text="Loading Kevin TV…" font="font:SmallSystemFont" color="0x8A8AA0FF"/>
+    <!-- one reusable fade-in for every screen that opens -->
+    <Animation id="fadeIn" duration="0.16" easeFunction="outQuad" repeat="false">
+      <FloatFieldInterpolator id="fadeInterp" key="[0.0, 1.0]" keyValue="[0.0, 1.0]" fieldToInterp="fadeTarget.opacity"/>
+    </Animation>
+  </children>
+</component>

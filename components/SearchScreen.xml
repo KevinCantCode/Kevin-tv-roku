@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Search: on-screen keyboard on the left, live results (Shows / Movies / Channels) on the right.
+     Matching runs in SearchTask (never on the render thread) over the bundled index. OK opens the page, never plays. -->
+<component name="SearchScreen" extends="Group">
+  <interface>
+    <field id="task" type="node" onChange="onTask"/>
+    <field id="selected" type="assocarray" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+    <function name="dispose"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/SearchScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Rectangle width="720" height="1080" color="0x101018FF"/>
+    <Label text="Search" translation="[72,52]" font="font:LargeBoldSystemFont"/>
+    <Label id="hint" translation="[72,124]" width="600" wrap="true" maxLines="2" font="font:SmallestSystemFont" color="0x8A8AA0FF"
+           text="Results appear as you type. Press * (or Right at the keyboard's edge) to jump to them."/>
+    <MiniKeyboard id="kb" translation="[52,210]"/>
+    <Label id="status" translation="[780,60]" width="1080" height="44" font="font:SmallBoldSystemFont" color="0xA8A8BCFF"
+           text="Movies, shows and channels"/>
+    <Label id="hero" translation="[780,104]" width="1080" font="font:SmallSystemFont" color="0xF0F0F6FF"/>
+    <RowList id="rows" translation="[780,160]" itemComponentName="PosterItem" numRows="2"
+             itemSize="[1100,392]" rowItemSize="[[190,285]]" rowItemSpacing="[[20,0]]" itemSpacing="[0,22]"
+             showRowLabel="[true]" rowLabelOffset="[[0,12]]" rowLabelFont="font:SmallBoldSystemFont" rowLabelColor="0xE6E6EEFF"
+             focusXOffset="[0]" rowFocusAnimationStyle="floatingFocus" vertFocusAnimationStyle="floatingFocus"
+             drawFocusFeedback="true" drawFocusFeedbackOnTop="true" focusBitmapUri="pkg:/images/focus_ring.9.png"/>
+    <Timer id="deb" duration="0.3" repeat="false"/>
+  </children>
+</component>

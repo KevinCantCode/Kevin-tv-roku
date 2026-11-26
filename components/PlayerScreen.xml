@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full-screen player. VOD: resume points + PC fallback on errors. Live: HLS (.m3u8) with a .ts fallback, Up/Down (and CH+/CH-)
+     switch channels inside the list the channel was opened from, wrapping at the ends. -->
+<component name="PlayerScreen" extends="Group">
+  <interface>
+    <field id="req" type="assocarray" onChange="onReq"/>
+    <field id="cfg" type="assocarray"/>
+    <field id="needPc" type="assocarray" alwaysNotify="true"/>
+    <field id="done" type="string" alwaysNotify="true"/>
+    <field id="liveIdx" type="integer" value="-1"/>
+    <field id="liveFmt" type="string"/>
+    <field id="liveErr" type="assocarray" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+    <function name="stopAndSave"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/PlayerScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF"/>
+    <Video id="video" width="1920" height="1080"/>
+    <Group id="banner" translation="[60,70]" visible="false">
+      <Rectangle id="bannerBg" width="800" height="156" color="0x0B0B10E6"/>
+      <Rectangle width="6" height="156" color="0x7C5CFFFF"/>
+      <Label id="bK" translation="[30,18]" width="740" font="font:SmallestBoldSystemFont" color="0xA8A8BCFF"/>
+      <Label id="bN" translation="[30,48]" width="740" height="50" font="font:MediumBoldSystemFont"/>
+      <Label id="bNow" translation="[30,102]" width="740" font="font:SmallSystemFont" color="0xD6D6E2FF"/>
+    </Group>
+    <Group id="aPanel" translation="[1260,0]" visible="false">
+      <Rectangle width="660" height="1080" color="0x0B0B10EE"/>
+      <Rectangle width="6" height="1080" color="0x7C5CFFFF"/>
+      <Label id="aHead" text="AUDIO" translation="[48,90]" width="580" font="font:SmallestBoldSystemFont" color="0xA8A8BCFF"/>
+      <LabelList id="aList" translation="[36,140]" itemSize="[588,64]" numRows="12" vertFocusAnimationStyle="floatingFocus"
+          focusBitmapUri="pkg:/images/pill.9.png" color="0xD6D6E2FF" focusedColor="0x0B0B10FF" font="font:SmallSystemFont" focusedFont="font:SmallBoldSystemFont"/>
+      <Label id="aTip" translation="[48,640]" width="570" height="320" wrap="true" maxLines="9" visible="false" font="font:SmallestSystemFont" color="0xD6D6E2FF"
+          text="With a soundbar on HDMI ARC: Roku Settings › Audio › Digital output format → Auto (or Passthrough), and turn on HDMI ARC/eARC, so Dolby and DTS go to the soundbar. On the TV speakers DTS and TrueHD can't play: pick another track, or Play through the PC. (Menu names vary by model.)"/>
+      <Label text="OK: choose  ·  Back: close" translation="[48,980]" width="580" font="font:SmallestSystemFont" color="0x8A8AA0FF"/>
+    </Group>
+    <Label id="msg" translation="[160,880]" width="1600" horizAlign="center" wrap="true" font="font:MediumSystemFont" visible="false"/>
+    <Timer id="tuneTimer" duration="0.7" repeat="false"/>
+    <Timer id="bannerTimer" duration="4" repeat="false"/>
+    <Timer id="retryTimer" duration="2.5" repeat="false"/>
+  </children>
+</component>

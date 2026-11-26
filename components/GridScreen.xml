@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "See all": every title of one row as a full-screen poster grid. OK opens the detail page; Back returns to the row. -->
+<component name="GridScreen" extends="Group">
+  <interface>
+    <field id="title" type="string" onChange="onTitle"/>
+    <field id="selected" type="assocarray" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+    <function name="dispose"/>
+    <function name="load"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/GridScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Label id="ttl" translation="[96,48]" width="1300" height="60" font="font:LargeBoldSystemFont"/>
+    <Label id="count" translation="[1400,62]" width="424" horizAlign="right" font="font:SmallSystemFont" color="0x8A8AA0FF"/>
+    <Label id="hero" translation="[96,120]" width="1728" font="font:SmallBoldSystemFont" color="0xD6D6E2FF"/>
+    <MarkupGrid id="grid" translation="[96,180]" itemComponentName="PosterItem" numColumns="8" numRows="3"
+                itemSize="[190,285]" itemSpacing="[30,38]" vertFocusAnimationStyle="floatingFocus"
+                drawFocusFeedback="true" drawFocusFeedbackOnTop="true" focusBitmapUri="pkg:/images/focus_ring.9.png"/>
+    <Group id="busy" translation="[96,500]" visible="false">
+      <BusySpinner id="spin" translation="[832,0]" spinInterval="0.9"/>
+    </Group>
+    <Timer id="heroTimer" duration="0.12" repeat="false"/>
+  </children>
+</component>

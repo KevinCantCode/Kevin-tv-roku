@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.0.11 "Who's watching?": pick, add (keyboard), rename / delete with * (confirm). Profiles live in the
+     registry (util.brs profList); Continue Watching and resume points are per profile. -->
+<component name="ProfileScreen" extends="Group">
+  <interface>
+    <field id="mode" type="string" value="launch"/>
+    <field id="chosen" type="string" alwaysNotify="true"/>
+    <function name="takeFocus"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/ProfileScreen.brs"/>
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B10FF"/>
+    <Group translation="[36,44]">
+      <Rectangle width="52" height="52" color="0x7C5CFFFF"/>
+      <Label text="K" width="52" height="52" horizAlign="center" vertAlign="center" font="font:MediumBoldSystemFont"/>
+      <Label text="Kevin TV" translation="[68,9]" font="font:MediumBoldSystemFont"/>
+    </Group>
+    <Label id="head" translation="[0,250]" width="1920" horizAlign="center" text="Who's watching?" color="0xFFFFFFFF"
+           font="font:LargeBoldSystemFont" scale="[1.35,1.35]" scaleRotateCenter="[960,30]"/>
+    <MarkupGrid id="grid" itemComponentName="ProfileItem" itemSize="[260,320]" itemSpacing="[40,0]"
+                numRows="1" numColumns="7" drawFocusFeedback="false" vertFocusAnimationStyle="fixedFocusWrap"/>
+    <Label id="hint" translation="[0,780]" width="1920" horizAlign="center" font="font:SmallSystemFont" color="0x6E6E86FF"
+           text="OK to choose   ·   * (options) to rename or delete"/>
+    <Label id="msg" translation="[0,840]" width="1920" horizAlign="center" font="font:SmallSystemFont" color="0xFF8A8AFF"/>
+  </children>
+</component>

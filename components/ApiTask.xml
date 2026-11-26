@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One HTTP GET (JSON or plain), off the render thread. Never logs the URL (it carries the login). -->
+<component name="ApiTask" extends="Task">
+  <interface>
+    <field id="url" type="string"/>
+    <field id="tag" type="string"/>
+    <field id="timeout" type="integer" value="15000"/>
+    <field id="raw" type="boolean" value="false"/>
+    <field id="result" type="assocarray"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/util.brs"/>
+  <script type="text/brightscript" uri="pkg:/components/ApiTask.brs"/>
+</component>

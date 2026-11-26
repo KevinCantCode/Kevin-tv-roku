@@ -1,0 +1,4 @@
+# real provider login lives here; never commit it
+data/personal.json
+*.zip
+out/

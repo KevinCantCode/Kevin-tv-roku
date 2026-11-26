@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Who's watching? tile: colored circle with the initial, name underneath; "+" tile to add a profile -->
+<component name="ProfileItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent"/>
+    <field id="focusPercent" type="float" onChange="onFocus"/>
+    <field id="gridHasFocus" type="boolean" onChange="onFocus"/>
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/ProfileItem.brs"/>
+  <children>
+    <Poster id="ring" uri="pkg:/images/circle_ring.png" width="232" height="232" translation="[14,4]" opacity="0"/>
+    <Poster id="circle" uri="pkg:/images/circle.png" width="200" height="200" translation="[30,20]"/>
+    <Label id="initial" width="200" height="200" translation="[30,20]" horizAlign="center" vertAlign="center" color="0xFFFFFFFF"
+           font="font:LargeBoldSystemFont" scale="[2.0,2.0]" scaleRotateCenter="[100,100]"/>
+    <Label id="name" width="260" translation="[0,256]" horizAlign="center" font="font:MediumSystemFont" color="0xA8A8BCFF"/>
+  </children>
+</component>
