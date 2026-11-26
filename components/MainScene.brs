@@ -768,7 +768,7 @@ sub onPlayerDone_impl()
                 e.sn = toS(e.sn)
                 e.n = toI(e.n)
                 nr = {mode: "vod", kind: "series", id: e.id, ext: e.ext, title: toS(req.showTitle) + " · S" + e.sn + ":E" + e.n.ToStr() + " " + toS(e.t),
-                      start: 0, key: "e:" + e.id, poster: req.poster, pcWhy: pcReason(e.ext, e.v, e.a), vcodec: e.v,
+                      start: 0, key: "e:" + e.id, poster: req.poster, pcWhy: pcReason(e.ext, e.v, e.a), vcodec: e.v, acodec: e.a,
                       sid: req.sid, showTitle: req.showTitle, sn: e.sn, en: e.n, eps: lst, dur: toI(e.dur)}
                 if nr.pcWhy <> "" then
                     playViaPc(nr, nr.pcWhy, true)

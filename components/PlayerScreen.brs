@@ -111,7 +111,7 @@ sub startVod()
         m.startAt = 0
     end if
     if st > 0 and m.offset = 0 then cn.PlayStart = st
-    print "[KTV] play start kind=" + toS(r.kind) + " id=" + toS(r.id) + " ext=" + toS(r.ext) + " fmt=" + fmt + " start=" + st.ToStr() + " viaPc=" + toS(r.viaPc) + " url=<hidden>"
+    print "[KTV] play start kind=" + toS(r.kind) + " id=" + toS(r.id) + " ext=" + toS(r.ext) + " fmt=" + fmt + " start=" + st.ToStr() + " viaPc=" + toS(r.viaPc) + " vcodec=" + toS(r.vcodec) + " acodec=" + toS(r.acodec) + " url=<hidden>"
     m.audioDone = false
     m.userPicked = false
     m.tracks = []
@@ -569,10 +569,20 @@ sub checkAudio(tracks as dynamic)
             return
         else if not m.noTrkMenu and m.provTried and not m.provActive then
             m.noTrkMenu = true
-            print "[KTV] audio: still no audio tracks after the HLS try -> audio menu"
-            showHint("This file reports no audio tracks.")
-            openAudio()
-            m.aHead.text = "NO AUDIO TRACKS"
+            ' v1.0.13: a Roku player on stereo output hides Dolby/DTS tracks completely (audio=none, 0 tracks).
+            ' The provider's own listing says what the sound really is.
+            pc = normCodec(m.top.req.acodec)
+            print "[KTV] audio: still no audio tracks after the HLS try -> audio menu (provider says acodec=" + toS(m.top.req.acodec) + ", output=" + toS(CreateObject("roDeviceInfo").GetAudioOutputChannel()) + ")"
+            if pc = "ac3" or pc = "eac3" or pc = "dts" or pc = "truehd" then
+                showHint("The sound is " + UCase(pc) + ", which this Roku can only pass to the TV, and its audio output is set to stereo.")
+                openAudio()
+                m.aHead.text = "NO SOUND:  " + UCase(pc)
+            else
+                showHint("This Roku found no sound it can play in this file (likely Dolby or DTS).")
+                openAudio()
+                m.aHead.text = "NO AUDIO TRACKS"
+            end if
+            m.aTip.visible = true
             return
         end if
     end if

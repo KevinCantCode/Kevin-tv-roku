@@ -225,7 +225,7 @@ sub onButton_impl()
         if c.kind = "m" then
             m.top.playReq = {mode: "vod", kind: "movie", id: c.xid, ext: c.ext, title: c.title, start: a.start,
                              key: "m:" + c.xid, poster: c.HDPosterUrl, pcWhy: pcReason(c.ext, m.info.vcodec, m.info.acodec),
-                             vcodec: m.info.vcodec, dur: toI(m.info.dur)}
+                             vcodec: m.info.vcodec, acodec: m.info.acodec, dur: toI(m.info.dur)}
         end if
     else if a.act = "episode" then
         playEpisode(a.ep, a.start)
@@ -420,7 +420,7 @@ sub playEpisode(e as object, start as dynamic)
     st = toI(start)
     print "[KTV] play request episode id=" + id + " S" + sn + "E" + en.ToStr() + " ext=" + ext + " start=" + st.ToStr()
     m.top.playReq = {mode: "vod", kind: "series", id: id, ext: ext, title: toS(c.title) + " · S" + sn + ":E" + en.ToStr() + " " + toS(e.t),
-                     start: st, key: "e:" + id, poster: toS(c.HDPosterUrl), pcWhy: pcReason(ext, e.v, e.a), vcodec: toS(e.v),
+                     start: st, key: "e:" + id, poster: toS(c.HDPosterUrl), pcWhy: pcReason(ext, e.v, e.a), vcodec: toS(e.v), acodec: toS(e.a),
                      sid: toS(c.xid), showTitle: toS(c.title), sn: sn, en: en, eps: eps, dur: toI(e.dur)}
 end sub
 
